@@ -33,6 +33,13 @@ def test_camera_latest_jpeg():
     assert jpeg[:2] == b"\xff\xd8"
 
 
+def test_latest_jpeg_none_before_start():
+    from econ_cam.capture import Camera
+
+    cam = Camera(0, 1280, 720)
+    assert cam.latest_jpeg() is None
+
+
 @pytest.mark.skipif(not os.path.exists("/dev/video1"), reason="두 번째 카메라 없음")
 def test_sync_capture_two_cameras():
     from econ_cam.capture import sync_capture

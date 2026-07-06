@@ -50,6 +50,8 @@ class Camera:
         self._pipeline.set_state(Gst.State.PLAYING)
 
     def latest_jpeg(self):
+        if self._sink is None:
+            return None
         result = _pull(self._sink, 2.0)
         return result[0] if result else None
 
