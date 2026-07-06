@@ -9,7 +9,10 @@
 <body>
   <header>
     <h1>e-con Multi-Cam Test</h1>
-    <button id="refresh">카메라 재감지</button>
+    <div class="header-actions">
+      <button id="refresh">카메라 재감지</button>
+      <button id="shutdown" class="danger">프로그램 종료</button>
+    </div>
   </header>
 
   <nav class="tabs">
@@ -45,6 +48,9 @@
   </section>
 
   <div id="toast"></div>
+  <div id="shutdown-overlay" hidden>
+    <p>프로그램이 종료되었습니다.<br>이 탭을 닫으셔도 됩니다.</p>
+  </div>
   <script src="/static/app.js"></script>
 </body>
 </html>

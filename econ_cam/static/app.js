@@ -142,5 +142,18 @@ document.getElementById("refresh").addEventListener("click", async () => {
   await loadCameras();
   toast("재감지 완료");
 });
+document.getElementById("shutdown").addEventListener("click", async () => {
+  if (!confirm("프로그램을 종료하시겠습니까? 종료 후에는 터미널에서 다시 실행해야 합니다.")) {
+    return;
+  }
+  document.getElementById("single-preview").src = "";  // 프리뷰 스트림 중단
+  try {
+    // 서버가 응답 직후 종료되므로 연결이 끊길 수 있다 — 실패해도 정상으로 본다.
+    await fetch("/api/shutdown", { method: "POST" });
+  } catch (e) {
+    /* 종료 중 연결 끊김 — 예상된 동작 */
+  }
+  document.getElementById("shutdown-overlay").hidden = false;
+});
 
 loadCameras().then(() => setMode("single"));

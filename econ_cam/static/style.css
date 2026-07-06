@@ -23,6 +23,20 @@ button {
   cursor: pointer;
 }
 button:hover { filter: brightness(1.1); }
+.header-actions { display: flex; gap: 10px; }
+.danger { background: #e44; color: #fff; }
+#shutdown-overlay[hidden] { display: none; }
+#shutdown-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 20px;
+  z-index: 10;
+}
 .tabs { display: flex; gap: 4px; padding: 12px 20px 0; }
 .tab {
   background: #333;

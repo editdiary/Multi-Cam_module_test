@@ -89,6 +89,18 @@ def create_app(width=1920, height=1080):
             stop_streams()
         return jsonify({"ok": True})
 
+    @app.route("/api/shutdown", methods=["POST"])
+    def api_shutdown():
+        # 카메라 파이프라인을 먼저 정리해 /dev/videoN 을 깨끗이 해제한다.
+        with state["lock"]:
+            stop_streams()
+
+        # HTTP 응답이 먼저 나간 뒤 프로세스를 종료한다.
+        # Werkzeug 3.x 에는 server.shutdown 콜러블이 없어 os._exit 를 쓴다.
+        # (atexit/DB/버퍼가 없으므로 즉시 종료해도 안전)
+        threading.Timer(0.5, lambda: os._exit(0)).start()
+        return jsonify({"status": "shutting down"})
+
     @app.route("/api/capture", methods=["POST"])
     def api_capture():
         data = request.get_json(force=True)
