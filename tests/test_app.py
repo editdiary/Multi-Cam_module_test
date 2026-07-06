@@ -65,6 +65,12 @@ def test_save_writes_files(tmp_path, monkeypatch):
     assert len(reports) == 1
 
 
+def test_get_resolution_returns_current():
+    client = app_module.create_app(width=1280, height=720).test_client()
+    body = client.get("/api/resolution").get_json()
+    assert body == {"width": 1280, "height": 720}
+
+
 def test_cameras_route(monkeypatch):
     monkeypatch.setattr(app_module.controls, "detect_cameras",
                         lambda: [{"dev": 0, "name": "ar0234", "label": "Camera 0"}])

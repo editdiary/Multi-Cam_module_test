@@ -200,8 +200,10 @@ def create_app(width=1920, height=1080):
         dev = int(request.args["dev"])
         return jsonify(controls.list_resolutions(dev))
 
-    @app.route("/api/resolution", methods=["POST"])
-    def api_set_resolution():
+    @app.route("/api/resolution", methods=["GET", "POST"])
+    def api_resolution():
+        if request.method == "GET":
+            return jsonify({"width": state["width"], "height": state["height"]})
         data = request.get_json(force=True)
         with state["lock"]:
             state["width"] = int(data["width"])

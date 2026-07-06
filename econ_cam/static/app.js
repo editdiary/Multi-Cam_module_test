@@ -63,6 +63,27 @@ async function loadCameras() {
     .join("");
 }
 
+async function loadResolutions() {
+  if (!cameras.length) return;
+  const [list, cur] = await Promise.all([
+    api(`/api/resolutions?dev=${cameras[0].dev}`),
+    api("/api/resolution"),
+  ]);
+  const sel = document.getElementById("resolution");
+  sel.innerHTML = list
+    .map(([w, h]) => {
+      const on = w === cur.width && h === cur.height ? " selected" : "";
+      return `<option value="${w}x${h}"${on}>${w}×${h}</option>`;
+    })
+    .join("");
+}
+
+async function applyResolution() {
+  const [w, h] = document.getElementById("resolution").value.split("x").map(Number);
+  await jsonPost("/api/resolution", { width: w, height: h });
+  setMode(activeMode()); // 스트림/세션 재시작(백엔드가 stop_streams+stop_sync 처리)
+}
+
 function startSinglePreview() {
   const dev = document.getElementById("single-cam").value;
   if (!dev) return;
@@ -118,7 +139,7 @@ async function startSyncSession() {
         `<figcaption id="sync-cap-${d}">video${d}</figcaption></figure>`
     )
     .join("");
-  document.getElementById("multi-live").hidden = true;
+  document.getElementById("multi-live").disabled = true;
   if (statusTimer) clearInterval(statusTimer);
   statusTimer = setInterval(pollSyncStatus, 700);
 }
@@ -173,7 +194,7 @@ async function multiCapture() {
   const el = document.getElementById("multi-status");
   el.className = "status-line captured";
   el.textContent = `촬영 동기: 최대편차 ${data.stats.spread_ms.toFixed(2)} ms · σ ${data.stats.std_ms.toFixed(2)} ms`;
-  document.getElementById("multi-live").hidden = false;
+  document.getElementById("multi-live").disabled = false;
 }
 
 document.querySelectorAll(".tab").forEach((t) =>
@@ -194,9 +215,11 @@ document.getElementById("multi-live").addEventListener("click", () => {
 document.getElementById("multi-cams").addEventListener("change", () => {
   if (activeMode() === "multi") stopSync().then(startSyncSession);
 });
+document.getElementById("resolution").addEventListener("change", applyResolution);
 document.getElementById("refresh").addEventListener("click", async () => {
   await fetch("/api/cameras/refresh", { method: "POST" });
   await loadCameras();
+  await loadResolutions();  // 카메라가 바뀌면 지원 해상도 목록도 갱신
   setMode(activeMode());  // 재감지 후 현재 모드 프리뷰 재시작
   toast("재감지 완료");
 });
@@ -214,4 +237,4 @@ document.getElementById("shutdown").addEventListener("click", async () => {
   document.getElementById("shutdown-overlay").hidden = false;
 });
 
-loadCameras().then(() => setMode("single"));
+loadCameras().then(loadResolutions).then(() => setMode("single"));

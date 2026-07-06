@@ -9,3 +9,4 @@ def test_index_served():
     assert "다중 동기 촬영" in html
     assert "캘리브레이션" in html
     assert "/static/app.js" in html
+    assert 'id="resolution"' in html

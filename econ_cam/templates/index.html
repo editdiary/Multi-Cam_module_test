@@ -10,6 +10,7 @@
   <header>
     <h1>e-con Multi-Cam Test</h1>
     <div class="header-actions">
+      <label class="res-label">해상도 <select id="resolution"></select></label>
       <button id="refresh">카메라 재감지</button>
       <button id="shutdown" class="danger">프로그램 종료</button>
     </div>
@@ -22,30 +23,38 @@
   </nav>
 
   <section id="single" class="mode active">
-    <div class="controls">
-      <select id="single-cam"></select>
-      <button id="single-capture">Capture</button>
-      <button id="single-save">Save</button>
-    </div>
-    <div class="view">
-      <img id="single-preview" alt="preview">
-      <img id="single-still" alt="still" hidden>
+    <div class="card">
+      <div class="toolbar">
+        <div class="toolbar-left"><select id="single-cam"></select></div>
+        <div class="actions">
+          <button id="single-capture">Capture</button>
+          <button id="single-save">Save</button>
+        </div>
+      </div>
+      <div class="view">
+        <img id="single-preview" alt="preview">
+        <img id="single-still" alt="still" hidden>
+      </div>
     </div>
   </section>
 
   <section id="multi" class="mode">
-    <div class="controls">
-      <div id="multi-cams" class="checkboxes"></div>
-      <button id="multi-capture">Sync Capture</button>
-      <button id="multi-live" hidden>라이브 재개</button>
-      <button id="multi-save">Save All</button>
+    <div class="card">
+      <div class="toolbar">
+        <div id="multi-cams" class="toolbar-left checkboxes"></div>
+        <div class="actions">
+          <button id="multi-live" disabled>라이브 재개</button>
+          <button id="multi-capture">Sync Capture</button>
+          <button id="multi-save">Save All</button>
+        </div>
+      </div>
+      <div id="multi-status" class="status-line">동기화 측정 준비 중…</div>
+      <div id="multi-grid" class="grid"></div>
     </div>
-    <div id="multi-status" class="status-line">동기화 측정 준비 중…</div>
-    <div id="multi-grid" class="grid"></div>
   </section>
 
   <section id="calib" class="mode">
-    <p class="placeholder">캘리브레이션 기능은 추후 업데이트 예정입니다.</p>
+    <div class="card"><p class="placeholder">캘리브레이션 기능은 추후 업데이트 예정입니다.</p></div>
   </section>
 
   <div id="toast"></div>

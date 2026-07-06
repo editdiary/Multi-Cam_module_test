@@ -11,6 +11,9 @@ header {
   align-items: center;
   padding: 12px 20px;
   background: #111;
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
 h1 { font-size: 18px; margin: 0; }
 button {
@@ -23,7 +26,9 @@ button {
   cursor: pointer;
 }
 button:hover { filter: brightness(1.1); }
-.header-actions { display: flex; gap: 10px; }
+button:disabled { opacity: 0.45; cursor: default; filter: none; }
+.header-actions { display: flex; gap: 10px; align-items: center; }
+.res-label { display: flex; align-items: center; gap: 6px; font-size: 14px; color: #ccc; }
 .danger { background: #e44; color: #fff; }
 #shutdown-overlay[hidden] { display: none; }
 #shutdown-overlay {
@@ -44,15 +49,24 @@ button:hover { filter: brightness(1.1); }
   border-radius: 6px 6px 0 0;
 }
 .tab.active { background: #2d7; color: #062; }
-.mode { display: none; padding: 20px; }
+.mode { display: none; padding: 20px 0 0; }
 .mode.active { display: block; }
-.controls {
+.card {
+  background: #222;
+  border-radius: 10px;
+  padding: 16px;
+  margin: 0 20px 20px;
+}
+.toolbar {
   display: flex;
-  gap: 10px;
+  justify-content: space-between;
   align-items: center;
+  gap: 12px;
   flex-wrap: wrap;
   margin-bottom: 16px;
 }
+.toolbar-left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.actions { display: flex; gap: 10px; }
 select {
   padding: 8px;
   border-radius: 6px;
