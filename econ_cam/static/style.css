@@ -71,17 +71,18 @@ select {
 .grid figure { margin: 0; }
 .grid img { width: 100%; border-radius: 8px; }
 .grid figcaption { text-align: center; padding: 4px; color: #aaa; }
-#sync-stats {
-  margin-top: 20px;
-  border-collapse: collapse;
-  min-width: 320px;
+.status-line {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #262626;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
 }
-#sync-stats th, #sync-stats td {
-  border: 1px solid #444;
-  padding: 8px 14px;
-  text-align: left;
-}
-#sync-stats .summary td { font-weight: 700; background: #262; }
+.status-line.good { background: #14351f; }
+.status-line.warn { background: #3a3413; }
+.status-line.bad  { background: #3a1616; }
+.status-line.captured { background: #123; font-weight: 600; }
 .placeholder { color: #888; font-size: 16px; }
 #toast {
   position: fixed;

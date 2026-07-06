@@ -17,9 +17,20 @@ function toast(msg) {
   setTimeout(() => t.classList.remove("show"), 2500);
 }
 
+let statusTimer = null;
+
 async function stopStreams() {
   document.getElementById("single-preview").src = "";
   await fetch("/api/stream/stop", { method: "POST" });
+}
+
+async function stopSync() {
+  if (statusTimer) {
+    clearInterval(statusTimer);
+    statusTimer = null;
+  }
+  document.querySelectorAll("#multi-grid img").forEach((i) => (i.src = ""));
+  await fetch("/api/sync/stop", { method: "POST" });
 }
 
 function setMode(mode) {
@@ -29,9 +40,14 @@ function setMode(mode) {
   document.querySelectorAll(".mode").forEach((s) =>
     s.classList.toggle("active", s.id === mode)
   );
-  stopStreams().then(() => {
+  Promise.all([stopStreams(), stopSync()]).then(() => {
     if (mode === "single") startSinglePreview();
+    if (mode === "multi") startSyncSession();
   });
+}
+
+function activeMode() {
+  return document.querySelector(".tab.active").dataset.mode;
 }
 
 async function loadCameras() {
@@ -81,22 +97,61 @@ async function save() {
   toast(r.ok ? `저장됨: ${r.path}` : `저장 실패: ${r.error}`);
 }
 
-async function multiCapture() {
-  const devs = [...document.querySelectorAll("#multi-cams input:checked")].map(
+function selectedMultiDevs() {
+  return [...document.querySelectorAll("#multi-cams input:checked")].map(
     (c) => c.value
   );
+}
+
+async function startSyncSession() {
+  const devs = selectedMultiDevs();
   if (!devs.length) {
+    renderSyncStatus(null);
+    document.getElementById("multi-grid").innerHTML = "";
+    return;
+  }
+  await jsonPost("/api/sync/start", { devices: devs, sync_mode: 1 });
+  document.getElementById("multi-grid").innerHTML = devs
+    .map(
+      (d) =>
+        `<figure><img id="sync-img-${d}" src="/api/sync/stream/${d}?t=${Date.now()}">` +
+        `<figcaption id="sync-cap-${d}">video${d}</figcaption></figure>`
+    )
+    .join("");
+  document.getElementById("multi-live").hidden = true;
+  if (statusTimer) clearInterval(statusTimer);
+  statusTimer = setInterval(pollSyncStatus, 700);
+}
+
+async function pollSyncStatus() {
+  const s = await api("/api/sync/status");
+  renderSyncStatus(s && s.ready ? s : null);
+}
+
+function renderSyncStatus(s) {
+  const el = document.getElementById("multi-status");
+  if (!s) {
+    el.className = "status-line";
+    el.textContent = "동기화 측정 준비 중…";
+    return;
+  }
+  const spread = s.spread_ms;
+  const level = spread < 2 ? "good" : spread < 10 ? "warn" : "bad";
+  const dot = { good: "🟢", warn: "🟡", bad: "🔴" }[level];
+  const word = { good: "동기 양호", warn: "동기 주의", bad: "동기 불량" }[level];
+  el.className = "status-line " + level;
+  el.textContent = `${dot} ${word}   최대편차 ${spread.toFixed(2)} ms · σ ${s.std_ms.toFixed(2)} ms · 기준 video${s.ref_dev}`;
+}
+
+async function multiCapture() {
+  if (!selectedMultiDevs().length) {
     toast("카메라를 선택하세요");
     return;
   }
   toast("동기 촬영 중...");
   let data;
   try {
-    data = await jsonPost("/api/capture", {
-      mode: "multi",
-      devices: devs,
-      sync_mode: 1,
-    });
+    data = await jsonPost("/api/sync/capture", {});
   } catch (e) {
     toast("동기 촬영 실패");
     return;
@@ -105,24 +160,20 @@ async function multiCapture() {
     toast("동기 촬영 실패");
     return;
   }
-  document.getElementById("multi-grid").innerHTML = Object.entries(data.images)
-    .map(
-      ([dev, uri]) =>
-        `<figure><img src="${uri}"><figcaption>video${dev}</figcaption></figure>`
-    )
-    .join("");
-  const s = data.stats;
-  const rows = Object.entries(s.per_camera)
-    .map(
-      ([dev, ms]) => `<tr><td>video${dev}</td><td>${ms.toFixed(3)} ms</td></tr>`
-    )
-    .join("");
-  document.getElementById("sync-stats").innerHTML =
-    `<tr><th>카메라</th><th>상대 타임스탬프</th></tr>${rows}` +
-    `<tr class="summary"><td>최대 편차 (max−min)</td><td>${s.spread_ms.toFixed(
-      3
-    )} ms</td></tr>` +
-    `<tr class="summary"><td>표준편차</td><td>${s.std_ms.toFixed(3)} ms</td></tr>`;
+  if (statusTimer) {
+    clearInterval(statusTimer); // 그리드 고정(freeze)
+    statusTimer = null;
+  }
+  const per = data.stats.per_camera;
+  Object.entries(data.images).forEach(([dev, uri]) => {
+    document.getElementById(`sync-img-${dev}`).src = uri;
+    document.getElementById(`sync-cap-${dev}`).textContent =
+      `video${dev}  +${(per[dev] ?? 0).toFixed(2)} ms`;
+  });
+  const el = document.getElementById("multi-status");
+  el.className = "status-line captured";
+  el.textContent = `촬영 동기: 최대편차 ${data.stats.spread_ms.toFixed(2)} ms · σ ${data.stats.std_ms.toFixed(2)} ms`;
+  document.getElementById("multi-live").hidden = false;
 }
 
 document.querySelectorAll(".tab").forEach((t) =>
@@ -137,9 +188,16 @@ document
 document.getElementById("single-save").addEventListener("click", save);
 document.getElementById("multi-capture").addEventListener("click", multiCapture);
 document.getElementById("multi-save").addEventListener("click", save);
+document.getElementById("multi-live").addEventListener("click", () => {
+  if (activeMode() === "multi") startSyncSession();
+});
+document.getElementById("multi-cams").addEventListener("change", () => {
+  if (activeMode() === "multi") stopSync().then(startSyncSession);
+});
 document.getElementById("refresh").addEventListener("click", async () => {
   await fetch("/api/cameras/refresh", { method: "POST" });
   await loadCameras();
+  setMode(activeMode());  // 재감지 후 현재 모드 프리뷰 재시작
   toast("재감지 완료");
 });
 document.getElementById("shutdown").addEventListener("click", async () => {

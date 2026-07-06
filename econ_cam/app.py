@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import threading
+import time
 from datetime import datetime
 
 from flask import Flask, Response, jsonify, render_template, request
@@ -31,7 +32,8 @@ def create_app(width=1920, height=1080):
     app = Flask(__name__)
     state = {
         "cameras": [],
-        "streams": {},     # {dev: capture.Camera} 프리뷰 파이프라인
+        "streams": {},     # {dev: capture.Camera} 단일 프리뷰 파이프라인
+        "sync_session": None,  # capture.SyncSession 다중 공유클럭 파이프라인
         "last": {},        # {dev: jpeg_bytes} 최근 캡처
         "last_stats": None,
         "width": width,
@@ -43,6 +45,11 @@ def create_app(width=1920, height=1080):
         for cam in state["streams"].values():
             cam.stop()
         state["streams"].clear()
+
+    def stop_sync():
+        if state["sync_session"] is not None:
+            state["sync_session"].stop()
+            state["sync_session"] = None
 
     def get_or_start_stream(dev):
         cam = state["streams"].get(dev)
@@ -66,6 +73,7 @@ def create_app(width=1920, height=1080):
     def api_cameras_refresh():
         with state["lock"]:
             stop_streams()
+            stop_sync()
             state["cameras"] = controls.detect_cameras()
         return jsonify(state["cameras"])
 
@@ -89,11 +97,70 @@ def create_app(width=1920, height=1080):
             stop_streams()
         return jsonify({"ok": True})
 
+    @app.route("/api/sync/start", methods=["POST"])
+    def api_sync_start():
+        data = request.get_json(force=True)
+        devs = [int(d) for d in data["devices"]]
+        sync_mode = int(data.get("sync_mode", 1))
+        with state["lock"]:
+            stop_streams()          # 단일 프리뷰가 device 점유 시 충돌 방지
+            stop_sync()
+            sess = capture.SyncSession(devs, state["width"], state["height"], sync_mode)
+            sess.start()
+            state["sync_session"] = sess
+        return jsonify({"ok": True, "devices": devs})
+
+    @app.route("/api/sync/stop", methods=["POST"])
+    def api_sync_stop():
+        with state["lock"]:
+            stop_sync()
+        return jsonify({"ok": True})
+
+    @app.route("/api/sync/stream/<int:dev>")
+    def api_sync_stream(dev):
+        sess = state["sync_session"]
+        if sess is None:
+            return ("", 404)
+
+        def gen():
+            last = None
+            while state["sync_session"] is sess:
+                jpeg = sess.latest_jpeg(dev)
+                if jpeg is not None and jpeg is not last:
+                    last = jpeg
+                    yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n")
+                time.sleep(0.02)
+
+        return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+    @app.route("/api/sync/status")
+    def api_sync_status():
+        sess = state["sync_session"]
+        if sess is None:
+            return jsonify({"active": False})
+        st = sess.live_stats()
+        if st is None:
+            return jsonify({"active": True, "ready": False})
+        return jsonify({"active": True, "ready": True, **_json_stats(st)})
+
+    @app.route("/api/sync/capture", methods=["POST"])
+    def api_sync_capture():
+        with state["lock"]:
+            sess = state["sync_session"]
+            if sess is None:
+                return jsonify({"ok": False, "error": "no session"}), 400
+            result = sess.capture()
+            state["last"] = result["images"]
+            state["last_stats"] = result["stats"]
+        images = {str(d): jpeg_to_data_uri(j) for d, j in result["images"].items()}
+        return jsonify({"ok": True, "images": images, "stats": _json_stats(result["stats"])})
+
     @app.route("/api/shutdown", methods=["POST"])
     def api_shutdown():
         # 카메라 파이프라인을 먼저 정리해 /dev/videoN 을 깨끗이 해제한다.
         with state["lock"]:
             stop_streams()
+            stop_sync()
 
         # HTTP 응답이 먼저 나간 뒤 프로세스를 종료한다.
         # Werkzeug 3.x 에는 server.shutdown 콜러블이 없어 os._exit 를 쓴다.
@@ -103,25 +170,15 @@ def create_app(width=1920, height=1080):
 
     @app.route("/api/capture", methods=["POST"])
     def api_capture():
+        # 단일 촬영 전용. 다중 동기 촬영은 /api/sync/capture 로 이관.
         data = request.get_json(force=True)
-        mode = data.get("mode", "single")
         with state["lock"]:
-            if mode == "single":
-                dev = int(data["devices"][0])
-                cam = get_or_start_stream(dev)
-                jpeg, _ = cam.capture()
-                state["last"] = {dev: jpeg}
-                state["last_stats"] = None
-                return jsonify({"images": {str(dev): jpeg_to_data_uri(jpeg)}})
-            # multi: 프리뷰가 device를 점유하면 동기 파이프라인이 실패하므로 먼저 정리
-            stop_streams()
-            devs = [int(d) for d in data["devices"]]
-            sync_mode = int(data.get("sync_mode", 1))
-            result = capture.sync_capture(devs, state["width"], state["height"], sync_mode)
-            state["last"] = result["images"]
-            state["last_stats"] = result["stats"]
-            images = {str(d): jpeg_to_data_uri(j) for d, j in result["images"].items()}
-            return jsonify({"images": images, "stats": _json_stats(result["stats"])})
+            dev = int(data["devices"][0])
+            cam = get_or_start_stream(dev)
+            jpeg, _ = cam.capture()
+            state["last"] = {dev: jpeg}
+            state["last_stats"] = None
+            return jsonify({"images": {str(dev): jpeg_to_data_uri(jpeg)}})
 
     @app.route("/api/save", methods=["POST"])
     def api_save():
@@ -150,6 +207,7 @@ def create_app(width=1920, height=1080):
             state["width"] = int(data["width"])
             state["height"] = int(data["height"])
             stop_streams()
+            stop_sync()
         return jsonify({"ok": True, "width": state["width"], "height": state["height"]})
 
     @app.route("/api/params")

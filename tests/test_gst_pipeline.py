@@ -1,4 +1,4 @@
-from econ_cam.gst_pipeline import preview_pipeline, sync_pipeline
+from econ_cam.gst_pipeline import preview_pipeline, sync_live_pipeline
 
 
 def test_preview_pipeline_contains_device_and_caps():
@@ -33,10 +33,17 @@ def test_preview_pipeline_custom_preview_resolution():
     assert "width=960,height=540" in p
 
 
-def test_sync_pipeline_has_one_branch_per_device():
-    p = sync_pipeline([0, 2], 1920, 1080)
+def test_sync_live_pipeline_per_device_branch_names():
+    p = sync_live_pipeline([0, 2], 1920, 1080)
     assert p.count("v4l2src") == 2
-    assert "device=/dev/video0" in p
-    assert "device=/dev/video2" in p
-    assert "appsink name=sink0" in p
-    assert "appsink name=sink2" in p
+    for d in (0, 2):
+        assert f"tee name=t{d}" in p
+        assert f"appsink name=preview{d}" in p
+        assert f"appsink name=capture{d}" in p
+        assert f"valve name=capgate{d} drop=true" in p
+
+
+def test_sync_live_pipeline_downscales_preview_only():
+    p = sync_live_pipeline([1], 1920, 1080)
+    assert "width=640,height=360" in p   # 프리뷰만 다운스케일
+    assert "width=1920,height=1080" in p  # 원본 소스 caps
