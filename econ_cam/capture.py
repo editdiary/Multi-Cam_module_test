@@ -1,9 +1,11 @@
 """GStreamer 기반 카메라 캡처 (Python gi + appsink).
 
-- Camera: 단일 카메라 파이프라인 (프리뷰 + 단일 캡처)
+- Camera: 단일 카메라 파이프라인 (저해상도 프리뷰 + 원본 캡처, tee+valve)
 - sync_capture: 단일 공유클럭 파이프라인으로 다중 카메라 동기 캡처
 
 appsink 버퍼 PTS(ns)를 초 단위로 변환해 타임스탬프로 사용한다.
+단일 카메라는 하나의 원본 소스를 tee로 나눠 저해상도 프리뷰를 상시 송출하고,
+원본 캡처 갈래는 valve로 게이트해 촬영 순간에만 원본 1프레임을 인코딩한다.
 다중 동기 캡처는 각 appsink(drop=true, max-buffers=1)에서 최신 버퍼를 순차 pull한다.
 frame_sync가 30Hz(33ms)로 락되어 있고 순차 pull은 수 ms 내에 끝나므로 같은 프레임
 주기의 버퍼를 얻는다(공유 클럭으로 PTS 비교 가능).
@@ -33,30 +35,50 @@ def _pull(sink, timeout_s):
 
 
 class Camera:
-    """단일 카메라 GStreamer 파이프라인 (프리뷰 + 단일 캡처)."""
+    """단일 카메라 GStreamer 파이프라인 (저해상도 프리뷰 + 원본 캡처).
+
+    프리뷰(preview appsink)는 상시 저해상도로 흐르고, 원본 캡처(capture appsink)는
+    valve(capgate)로 게이트되어 capture() 호출 순간에만 밸브를 열어 원본 1프레임을
+    받는다. 프리뷰는 캡처 중에도 끊기지 않는다.
+    """
 
     def __init__(self, dev, width, height):
         self.dev = dev
         self.width = width
         self.height = height
         self._pipeline = None
-        self._sink = None
+        self._preview = None
+        self._capture = None
+        self._valve = None
 
     def start(self):
         desc = gst_pipeline.preview_pipeline(self.dev, self.width, self.height)
         self._pipeline = Gst.parse_launch(desc)
-        self._sink = self._pipeline.get_by_name("sink")
+        self._preview = self._pipeline.get_by_name("preview")
+        self._capture = self._pipeline.get_by_name("capture")
+        self._valve = self._pipeline.get_by_name("capgate")
         self._pipeline.set_state(Gst.State.PLAYING)
 
     def latest_jpeg(self):
-        sink = self._sink
+        sink = self._preview
         if sink is None:
             return None
         result = _pull(sink, 2.0)
         return result[0] if result else None
 
     def capture(self):
-        result = _pull(self._sink, _PULL_TIMEOUT_S)
+        sink = self._capture
+        valve = self._valve
+        if sink is None or valve is None:
+            raise RuntimeError(f"camera /dev/video{self.dev} not started")
+        # 밸브를 열기 전, 이전 캡처의 잔여 버퍼를 비워 최신 프레임만 얻는다.
+        while _pull(sink, 0) is not None:
+            pass
+        valve.set_property("drop", False)
+        try:
+            result = _pull(sink, _PULL_TIMEOUT_S)
+        finally:
+            valve.set_property("drop", True)
         if result is None:
             raise RuntimeError(f"capture timeout on /dev/video{self.dev}")
         return result
@@ -65,7 +87,9 @@ class Camera:
         if self._pipeline is not None:
             self._pipeline.set_state(Gst.State.NULL)
             self._pipeline = None
-            self._sink = None
+            self._preview = None
+            self._capture = None
+            self._valve = None
 
 
 def sync_capture(devs, width, height, sync_mode=1):
