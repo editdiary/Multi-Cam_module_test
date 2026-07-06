@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>e-con Multi-Cam Test</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>e-con Multi-Cam Test</h1>
+    <button id="refresh">카메라 재감지</button>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-mode="single">단일 촬영</button>
+    <button class="tab" data-mode="multi">다중 동기 촬영</button>
+    <button class="tab" data-mode="calib">캘리브레이션</button>
+  </nav>
+
+  <section id="single" class="mode active">
+    <div class="controls">
+      <select id="single-cam"></select>
+      <button id="single-capture">Capture</button>
+      <button id="single-save">Save</button>
+    </div>
+    <div class="view">
+      <img id="single-preview" alt="preview">
+      <img id="single-still" alt="still" hidden>
+    </div>
+  </section>
+
+  <section id="multi" class="mode">
+    <div class="controls">
+      <div id="multi-cams" class="checkboxes"></div>
+      <button id="multi-capture">Sync Capture</button>
+      <button id="multi-save">Save All</button>
+    </div>
+    <div id="multi-grid" class="grid"></div>
+    <table id="sync-stats"></table>
+  </section>
+
+  <section id="calib" class="mode">
+    <p class="placeholder">캘리브레이션 기능은 추후 업데이트 예정입니다.</p>
+  </section>
+
+  <div id="toast"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

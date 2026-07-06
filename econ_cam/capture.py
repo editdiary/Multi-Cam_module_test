@@ -12,7 +12,6 @@ frame_sync가 30Hz(33ms)로 락되어 있고 순차 pull은 수 ms 내에 끝나
 import gi
 
 gi.require_version("Gst", "1.0")
-gi.require_version("GstApp", "1.0")
 from gi.repository import Gst  # noqa: E402
 
 from econ_cam import controls, gst_pipeline, stats  # noqa: E402
@@ -50,9 +49,10 @@ class Camera:
         self._pipeline.set_state(Gst.State.PLAYING)
 
     def latest_jpeg(self):
-        if self._sink is None:
+        sink = self._sink
+        if sink is None:
             return None
-        result = _pull(self._sink, 2.0)
+        result = _pull(sink, 2.0)
         return result[0] if result else None
 
     def capture(self):

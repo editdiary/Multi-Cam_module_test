@@ -14,7 +14,8 @@ def test_gstapp_available():
 
 def test_flask_available():
     import flask
-    assert flask.__version__
+    from importlib.metadata import version
+    assert version("flask")
 
 
 def test_package_importable():
