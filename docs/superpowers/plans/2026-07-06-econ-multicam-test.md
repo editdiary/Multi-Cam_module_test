@@ -61,7 +61,7 @@ captures/              # 저장 이미지 (.gitignore)
 - [ ] **Step 1: 패키지/디렉터리 생성**
 
 ```bash
-cd /home/cv_pretest/Desktop/Multi-Cam_module_test
+cd Multi-Cam_module_test   # 저장소 루트로 이동
 mkdir -p econ_cam/templates econ_cam/static tests captures
 touch econ_cam/__init__.py
 ```

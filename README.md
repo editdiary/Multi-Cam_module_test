@@ -136,6 +136,6 @@ pytest
 
 ## 8. 참고
 
-- 이전 ArduCam 기반 구현: [`ArduCam_Module_test/`](ArduCam_Module_test/) — **구조만 참고**(BA10 Bayer +
+- 이전 ArduCam 기반 구현: `ArduCam_Module_test/` (로컬 전용, 저장소에 포함되지 않음) — **구조만 참고**(BA10 Bayer +
   GPIO 트리거 기반이라 코드는 재사용하지 않음).
 - 설계 문서: [`docs/superpowers/specs/2026-07-06-econ-multicam-test-design.md`](docs/superpowers/specs/2026-07-06-econ-multicam-test-design.md)

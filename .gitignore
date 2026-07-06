@@ -67,9 +67,6 @@ captured_images/
 .env
 .env.local
 
-# CLAUDE
-CLAUDE.md
-
 ArduCam_Module_test/
 # Captured images
 captures/
