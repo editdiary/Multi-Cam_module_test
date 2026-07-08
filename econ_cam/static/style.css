@@ -76,7 +76,7 @@ select {
 }
 .checkboxes { display: flex; gap: 16px; flex-wrap: wrap; }
 .checkboxes label { display: flex; gap: 6px; align-items: center; }
-.view img { max-width: 100%; border-radius: 8px; }
+.view img { width: 100%; max-height: calc(100vh - 290px); object-fit: contain; border-radius: 8px; }
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -100,9 +100,9 @@ select {
 .placeholder { color: #888; font-size: 16px; }
 #toast {
   position: fixed;
-  bottom: 24px;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   background: #333;
   padding: 12px 24px;
   border-radius: 8px;

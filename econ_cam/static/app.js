@@ -50,6 +50,24 @@ function activeMode() {
   return document.querySelector(".tab.active").dataset.mode;
 }
 
+function currentResolution() {
+  const v = document.getElementById("resolution").value;  // "1280x720"
+  return v ? v.split("x").map(Number) : null;
+}
+
+function renderSingleStatus(captured) {
+  const el = document.getElementById("single-status");
+  const r = currentResolution();
+  const orig = r ? `${r[0]}×${r[1]}` : "—";
+  if (captured) {
+    el.className = "status-line captured";
+    el.textContent = `📸 촬영 완료 · 원본 ${orig} 해상도로 저장 준비됨 — Save를 누르세요`;
+  } else {
+    el.className = "status-line";
+    el.innerHTML = `<span style="color:#2d7">●</span> 라이브 · 프리뷰 640×360 ~15fps · 촬영 시 원본 ${orig} 해상도로 저장`;
+  }
+}
+
 async function loadCameras() {
   cameras = await api("/api/cameras");
   document.getElementById("single-cam").innerHTML = cameras
@@ -92,6 +110,8 @@ function startSinglePreview() {
   const img = document.getElementById("single-preview");
   img.hidden = false;
   img.src = `/api/stream/${dev}/mjpeg?t=${Date.now()}`;
+  document.getElementById("single-live").disabled = true;
+  renderSingleStatus(false);
 }
 
 async function singleCapture() {
@@ -111,6 +131,9 @@ async function singleCapture() {
   still.src = data.images[dev];
   still.hidden = false;
   document.getElementById("single-preview").hidden = true;
+  document.getElementById("single-live").disabled = false;
+  renderSingleStatus(true);
+  toast("촬영 완료");
 }
 
 async function save() {
@@ -207,6 +230,9 @@ document
   .getElementById("single-capture")
   .addEventListener("click", singleCapture);
 document.getElementById("single-save").addEventListener("click", save);
+document.getElementById("single-live").addEventListener("click", () => {
+  if (activeMode() === "single") startSinglePreview();
+});
 document.getElementById("multi-capture").addEventListener("click", multiCapture);
 document.getElementById("multi-save").addEventListener("click", save);
 document.getElementById("multi-live").addEventListener("click", () => {

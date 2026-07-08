@@ -88,6 +88,7 @@ def create_app(width=1920, height=1080):
                 if jpeg is None:
                     break
                 yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n")
+                time.sleep(1 / 15)   # ~15fps — 조준용으로 충분, CPU 부하 완화
 
         return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
