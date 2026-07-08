@@ -1,1 +1,5 @@
 flask
+# numpy>=1.22 required by opencv 4.8 typing module; installed venv-local
+# (system numpy 1.21.5 is too old and stays untouched — host apt unchanged).
+numpy==1.24.4
+opencv-contrib-python==4.8.1.78
