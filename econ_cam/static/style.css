@@ -122,6 +122,10 @@ select {
 .board-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
 .board-form label { display: flex; flex-direction: column; font-size: 12px; color: #aaa; gap: 4px; }
 .board-form label[hidden] { display: none; }   /* [hidden] 속성이 flex 규칙에 가려지지 않도록 */
+/* 세션 중 잠긴 옵션을 시각적으로 표시 */
+.board-form input:disabled, .board-form select:disabled,
+.cam-pick select:disabled, .cam-pick input:disabled,
+#calib-ext-ring:disabled { opacity: 0.5; cursor: not-allowed; }
 .board-form input { width: 80px; background: #333; color: #eee; border: 1px solid #555; border-radius: 6px; padding: 4px; }
 .calib-actions-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin: 8px 0; }
 .calib-actions-row .resume-row { margin: 0; }

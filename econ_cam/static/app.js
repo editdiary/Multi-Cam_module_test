@@ -303,6 +303,24 @@ function setCalibActive(sub, active) {
   document.getElementById(`calib-${sub}-save`).disabled = true;
   const sel = document.getElementById(`calib-${sub}-sessions`);
   document.getElementById(`calib-${sub}-resume`).disabled = active || !sel.options.length;
+  // 세션 중에는 세션을 정의하는 옵션(보드 설정·카메라·링)을 잠근다 → 종료 시 해제.
+  ["calib-board-type", "calib-cols", "calib-rows", "calib-square", "calib-marker",
+   "calib-dict", "calib-int-cam", "calib-ext-ring"].forEach((id) => {
+    document.getElementById(id).disabled = active;
+  });
+  document.querySelectorAll("#calib-ext-cams input").forEach((c) => (c.disabled = active));
+}
+
+function setBoardForm(board) {
+  document.getElementById("calib-board-type").value = board.board_type;
+  document.getElementById("calib-cols").value = board.cols;
+  document.getElementById("calib-rows").value = board.rows;
+  document.getElementById("calib-square").value = board.square_mm;
+  if (board.board_type === "charuco") {
+    document.getElementById("calib-marker").value = board.marker_mm;
+    document.getElementById("calib-dict").value = board.dictionary;
+  }
+  onBoardTypeChange();
 }
 
 function populateCalibSessions(sub) {
@@ -374,6 +392,7 @@ async function calibIntResume() {
     toast(r.error || "이어하기 실패");
     return;
   }
+  setBoardForm(r.board); // 폼을 불러온 세션의 보드 설정으로 맞춘 뒤 잠금
   if (r.devices && r.devices.length) {
     document.getElementById("calib-int-cam").value = r.devices[0];
     document.getElementById("calib-int-still").hidden = true;
@@ -547,6 +566,7 @@ async function calibExtResume() {
     toast(r.error || "이어하기 실패");
     return;
   }
+  setBoardForm(r.board); // 폼을 불러온 세션의 보드 설정으로 맞춘 뒤 잠금
   if (r.devices && r.devices.length) {
     document.querySelectorAll("#calib-ext-cams input").forEach((c) => {
       c.checked = r.devices.includes(Number(c.value));
