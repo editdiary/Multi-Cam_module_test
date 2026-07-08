@@ -111,3 +111,45 @@ select {
   pointer-events: none;
 }
 #toast.show { opacity: 1; }
+
+/* ---- 캘리브레이션 (Mode 3) ---- */
+.calib-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.calib-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.cam-pick { display: flex; flex-direction: column; font-size: 12px; color: #aaa; gap: 4px; }
+.cam-pick[hidden] { display: none; }
+.cam-pick select { background: #333; color: #eee; border: 1px solid #555; border-radius: 6px; padding: 4px; }
+.cam-pick .checkboxes { gap: 12px; }
+.board-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.board-form label { display: flex; flex-direction: column; font-size: 12px; color: #aaa; gap: 4px; }
+.board-form label[hidden] { display: none; }   /* [hidden] 속성이 flex 규칙에 가려지지 않도록 */
+.board-form input { width: 80px; background: #333; color: #eee; border: 1px solid #555; border-radius: 6px; padding: 4px; }
+.calib-actions-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin: 8px 0; }
+.calib-actions-row .resume-row { margin: 0; }
+.resume-row { display: flex; gap: 8px; align-items: center; margin: 8px 0; color: #aaa; font-size: 13px; }
+.resume-row label { display: flex; gap: 6px; align-items: center; }
+.resume-row select { min-width: 200px; background: #333; color: #eee; border: 1px solid #555; border-radius: 6px; padding: 4px; }
+.subtabs { display: flex; gap: 6px; flex-shrink: 0; }
+#calib-ext-cams { flex-wrap: nowrap; }
+.subtab { background: #333; color: #ccc; border: none; padding: 6px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+.subtab.active { background: #2d7; color: #062; }
+.submode { display: none; }
+.submode.active { display: block; }
+.verdict { padding: 10px 14px; border-radius: 8px; margin: 8px 0; font-weight: 600; }
+.verdict.pass { background: #14351f; color: #7fdca0; }
+.verdict.fail { background: #3a1616; color: #ffb0b0; }
+.verdict ul { margin: 6px 0 0; padding-left: 18px; font-weight: 400; }
+.coverage { color: #bbb; font-size: 13px; margin: 6px 0; }
+.coverage .missing { color: #e5c451; }
+.inline { display: flex; align-items: center; gap: 6px; color: #ccc; }
+.guide { margin: 10px 0; color: #bbb; font-size: 13px; }
+.guide summary { cursor: pointer; color: #ccc; font-weight: 600; }
+.guide ol { margin: 8px 0; padding-left: 20px; }
+.guide li { margin: 4px 0; }
+.guide h4 { margin: 12px 0 4px; color: #ddd; font-size: 13px; }
+.guide .why { color: #8fbf9f; }
+.help {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: #444; color: #ddd; font-size: 11px; margin-left: 4px; cursor: help;
+}
+.board-form .cap { display: inline-flex; align-items: center; }

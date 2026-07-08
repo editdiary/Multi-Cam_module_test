@@ -56,7 +56,126 @@
   </section>
 
   <section id="calib" class="mode">
-    <div class="card"><p class="placeholder">캘리브레이션 기능은 추후 업데이트 예정입니다.</p></div>
+    <div class="card">
+      <div class="calib-top">
+        <div class="calib-controls">
+        <div class="board-form">
+        <label><span class="cap">보드 종류 <span class="help" title="체커보드: 흑백 격자. ChArUco: 격자 + 흰 칸마다 ArUco 마커가 들어간 보드로, 보드가 일부만 보여도 검출돼 다중 카메라 촬영에 유리합니다.">?</span></span>
+          <select id="calib-board-type">
+            <option value="checkerboard" selected>체커보드</option>
+            <option value="charuco">ChArUco</option>
+          </select>
+        </label>
+        <label><span class="cap">교차점(가로) <span class="help" title="체커보드: 가로 방향 '내부 코너(교차점)' 개수. 예) 10×7칸 보드 → 9. ChArUco: 가로 '칸' 수.">?</span></span>
+          <input id="calib-cols" type="number" min="2" value="9"></label>
+        <label><span class="cap">교차점(세로) <span class="help" title="세로 방향 내부 코너 개수. 예) 10×7칸 보드 → 6. ChArUco: 세로 '칸' 수.">?</span></span>
+          <input id="calib-rows" type="number" min="2" value="6"></label>
+        <label><span class="cap">칸 크기(mm) <span class="help" title="격자 한 칸의 실제 한 변 길이(mm). 캘리브레이션의 실제 스케일 기준이 되므로 자로 잰 값을 정확히 입력하세요.">?</span></span>
+          <input id="calib-square" type="number" min="1" step="0.1" value="25"></label>
+        <label class="charuco-only" hidden><span class="cap">마커 크기(mm) <span class="help" title="ChArUco 전용. 흰 칸 안에 인쇄된 ArUco 마커의 실제 한 변 길이. 칸 크기보다 작아야 합니다(보통 칸의 70~80%).">?</span></span>
+          <input id="calib-marker" type="number" step="0.1" value="18"></label>
+        <label class="charuco-only" hidden><span class="cap">사전 <span class="help" title="ChArUco 전용. 마커 무늬의 집합. DICT_5X5_100 = 5×5비트 마커 100종. 실제로 인쇄한 보드를 만들 때 쓴 사전과 반드시 일치해야 마커가 읽힙니다.">?</span></span>
+          <select id="calib-dict">
+            <option>DICT_4X4_50</option><option selected>DICT_5X5_100</option>
+            <option>DICT_6X6_250</option><option>DICT_7X7_1000</option>
+          </select>
+        </label>
+        </div>
+        <label class="cam-pick" id="cam-pick-int"><span class="cap">카메라</span>
+          <select id="calib-int-cam"></select></label>
+        <div class="cam-pick" id="cam-pick-ext" hidden><span class="cap">카메라</span>
+          <div class="checkboxes" id="calib-ext-cams"></div></div>
+        </div>
+        <nav class="subtabs">
+          <button class="subtab active" data-sub="intrinsic">Intrinsic (단일)</button>
+          <button class="subtab" data-sub="extrinsic">Extrinsic (다중 동기)</button>
+        </nav>
+      </div>
+
+      <div id="calib-intrinsic" class="submode active">
+        <div class="calib-actions-row">
+          <div class="resume-row">
+            <label>이전 세션 이어하기 <select id="calib-int-sessions"></select></label>
+            <button id="calib-int-resume" disabled>이어하기</button>
+          </div>
+          <div class="actions">
+            <button id="calib-int-start">세션 시작</button>
+            <button id="calib-int-end" disabled>세션 종료</button>
+            <button id="calib-int-capture" disabled>Capture</button>
+            <button id="calib-int-save" disabled>저장</button>
+          </div>
+        </div>
+        <div id="calib-int-status" class="status-line">세션을 시작하세요.</div>
+        <div id="calib-int-verdict" class="verdict" hidden></div>
+        <div id="calib-int-coverage" class="coverage"></div>
+        <div class="view">
+          <img id="calib-int-preview" alt="preview">
+          <img id="calib-int-still" alt="still" hidden>
+        </div>
+      </div>
+
+      <div id="calib-extrinsic" class="submode">
+        <div class="calib-actions-row">
+          <div class="resume-row">
+            <label>이전 세션 이어하기 <select id="calib-ext-sessions"></select></label>
+            <button id="calib-ext-resume" disabled>이어하기</button>
+          </div>
+          <div class="actions">
+            <label class="inline"><input type="checkbox" id="calib-ext-ring"> 링 배열</label>
+            <span class="help" title="카메라를 원형(고리)으로 둘러 배치해 첫 카메라와 마지막 카메라의 화각도 겹치는 경우 체크하세요. 그러면 이웃 쌍(0-1, 1-2, 2-3)에 더해 '0-마지막' 쌍(예: 0-3)도 커버리지 목록에 추가됩니다. 카메라가 일렬(열린 배열)이면 체크하지 마세요.">?</span>
+            <button id="calib-ext-start">세션 시작</button>
+            <button id="calib-ext-end" disabled>세션 종료</button>
+            <button id="calib-ext-capture" disabled>Sync Capture</button>
+            <button id="calib-ext-save" disabled>저장</button>
+          </div>
+        </div>
+        <div id="calib-ext-status" class="status-line">카메라를 선택하세요.</div>
+        <div id="calib-ext-verdict" class="verdict" hidden></div>
+        <div id="calib-ext-pairs" class="coverage"></div>
+        <details class="guide"><summary>4-카메라 Extrinsic 촬영 가이드 — 이렇게 하세요</summary>
+          <div id="calib-ext-guide">
+            <h4>이 모드가 하는 일</h4>
+            <p>4대 카메라의 <b>상대 위치·자세(extrinsic)</b>를 나중에 계산할 때 쓸,
+              <b>여러 카메라가 체커보드를 동시에 본</b> 촬영 세트를 모읍니다.
+              계산 자체는 오프라인 후속 단계에서 하고, 여기서는 계산에 쓸 좋은 이미지만 수집합니다.</p>
+
+            <h4>왜 '인접 쌍'으로 모으나</h4>
+            <p class="why">두 카메라의 상대 위치는 <b>둘이 같은 보드를 동시에 봐야</b> 계산됩니다.
+              카메라가 링/일렬로 놓이면 보통 <b>이웃끼리만</b> 화각이 겹치므로(0-1, 1-2, 2-3),
+              이웃 쌍마다 데이터를 모아 사슬처럼 이어 붙여(0→1→2→3) 4대 전체 관계를 구합니다.
+              그래서 <b>모든 이웃 쌍</b>이 충분한 촬영본을 가져야 합니다.</p>
+
+            <h4>단계</h4>
+            <ol>
+              <li>카메라를 이웃끼리 화면이 겹치게 배치합니다. (원형으로 둘러 배치했으면 위 <b>링 배열</b> 체크)</li>
+              <li>카메라를 모두 선택 → 프리뷰가 뜨고 상단에 동기 상태(🟢 양호)가 보이는지 확인 → <b>세션 시작</b>.</li>
+              <li>체커보드를 <b>한 이웃 쌍이 둘 다 잘 보이는 겹침 영역</b>에 놓고 <b>Sync Capture</b>.
+                두 카메라 모두 초록 <b>✓사용가능</b>이어야 저장할 수 있습니다.</li>
+              <li><b>저장</b> → 그 쌍의 "쌍 커버리지" 숫자가 1 올라갑니다. (사용 가능한 카메라 이미지만 저장됩니다.)</li>
+              <li>같은 쌍을 보드의 <b>각도·거리·화면 위치를 조금씩 바꿔가며</b> 6장 이상 채운 뒤,
+                옆 쌍으로 이동합니다(예: 0-1 → 1-2 → 2-3).</li>
+              <li>"쌍 커버리지"의 모든 쌍이 목표치를 넘어 <b>노란색이 모두 사라지면</b> 충분합니다.</li>
+            </ol>
+
+            <h4>촬영 팁 (이유)</h4>
+            <ul>
+              <li><b>자세를 다양하게:</b> 같은 구도만 반복하면 계산이 부정확해집니다 —
+                다양한 각도·거리가 기하를 잘 제약해 정확도가 올라갑니다.</li>
+              <li><b>선명하게, 잘리지 않게:</b> 흐리거나 화면 가장자리에 잘린 카메라는 자동 제외됩니다.
+                두 카메라 모두 보드가 온전히·선명히 담기게 하세요.</li>
+              <li><b>절대 위치는 불필요:</b> 보드를 방 어디에 두든 상관없습니다.
+                각 촬영에서 두 카메라가 같은 보드를 보기만 하면 되고, <b>칸 크기(mm)</b>만 정확하면 스케일이 맞습니다.
+                (전체를 특정 월드 원점 기준으로 두고 싶을 때만 보드를 한 번 고정해 기준으로 삼으면 됩니다.)</li>
+            </ul>
+
+            <h4>저장 결과 (후속 계산용)</h4>
+            <p>각 shot 폴더에는 <b>사용 가능 판정을 받은 카메라 이미지만</b> 저장되고,
+              <code>detections.json</code>에 카메라별 검출/사용가능 여부와 동시 검출 쌍이 기록됩니다.
+              세션의 <code>report.json</code>과 함께 오프라인에서 이웃 쌍 stereoCalibrate → 체이닝에 사용합니다.</p>
+          </div></details>
+        <div id="calib-ext-grid" class="grid"></div>
+      </div>
+    </div>
   </section>
 
   <div id="toast"></div>
