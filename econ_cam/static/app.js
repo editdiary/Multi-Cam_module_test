@@ -302,6 +302,7 @@ function setCalibActive(sub, active) {
   document.getElementById(`calib-${sub}-capture`).disabled = !active;
   document.getElementById(`calib-${sub}-save`).disabled = true;
   const sel = document.getElementById(`calib-${sub}-sessions`);
+  sel.disabled = active;   // 세션 중에는 이어하기 드롭다운도 잠금
   document.getElementById(`calib-${sub}-resume`).disabled = active || !sel.options.length;
   // 세션 중에는 세션을 정의하는 옵션(보드 설정·카메라·링)을 잠근다 → 종료 시 해제.
   ["calib-board-type", "calib-cols", "calib-rows", "calib-square", "calib-marker",
