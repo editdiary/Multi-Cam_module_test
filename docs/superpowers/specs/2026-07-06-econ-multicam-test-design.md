@@ -1,8 +1,14 @@
 # e-con Multi-Camera 테스트 프로그램 — 설계 문서 (Design Spec)
 
 - 작성일: 2026-07-06
-- 상태: 승인 대기
+- 상태: 구현 완료 (Mode 1·2·3). 이 문서는 초기 설계 기록이며, 일부 항목은 아래 갱신 노트로 대체됨.
 - 대상 하드웨어: NVIDIA Jetson (JetPack 6.1), e-con systems AR0234 4-camera 모듈
+
+> **갱신 노트 (2026-07-08):** Mode 3는 원 설계의 "UI 스켈레톤만"에서 **체커보드/ChArUco 이미지
+> 수집 + 품질 검증**(Intrinsic 단일 / Extrinsic 다중 동기, 인접 쌍 커버리지)으로 구현되었다.
+> 이를 위해 `cv2`(opencv-contrib-python, venv 전용)를 도입했다(원 설계 §10의 "cv2 필요 시 추가" 실행).
+> 실제 K/extrinsic 행렬 **계산**은 여전히 범위 밖(오프라인 후속). 아래 Mode 3 관련 절(§2, §8.Mode 3, §9)은
+> 이 노트로 갱신된 것으로 본다. 상세: `docs/superpowers/plans/2026-07-08-calibration-mode.md`, 사용법: `docs/USAGE.md`.
 
 ---
 
