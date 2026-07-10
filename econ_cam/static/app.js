@@ -454,23 +454,25 @@ function renderRectQuality(info, ctx) {
   const v = info.verdict || {};
   const errs = info.per_view_errors || [];
   const used = info.used_indices || null;   // per_view_errors[i] → 저장 프레임 정렬 위치(원본 파일 추적)
+  const files = info.used_files || null;     // per_view_errors[i] → 실제 .jpg 파일 이름
   const size = info.image_size || [];
   // used_indices가 있고(재계산됨) 폴더·카메라가 특정되면 막대 클릭으로 실제 이미지를 볼 수 있다.
   const canView = !!(used && used.length === errs.length && ctx && ctx.session && ctx.dev !== "" && ctx.dev != null);
-  const frameNo = (i) => (canView ? used[i] : i);
+  // 라벨은 파일 이름 우선(재계산 전엔 숫자 폴백). 이미지 fetch URL은 계속 숫자 인덱스 used[i] 사용.
+  const frameLabel = (i) => (files ? files[i] : (canView ? used[i] : i));
   const maxScale = Math.max(2.0, ...errs, 0.001);
   const bars = errs
     .map((e, i) => {
       const cls = e < 1.0 ? "pv-good" : e < 2.0 ? "pv-fair" : "pv-poor";
       const ht = Math.max(4, Math.round((e / maxScale) * 100));
       const clk = canView ? " pv-click" : "";
-      return `<div class="pv-bar ${cls}${clk}" data-i="${i}" style="height:${ht}%" title="프레임 ${frameNo(i)}: ${e}px"></div>`;
+      return `<div class="pv-bar ${cls}${clk}" data-i="${i}" style="height:${ht}%" title="${frameLabel(i)}: ${e}px"></div>`;
     })
     .join("");
   let worst = "";
   if (errs.length) {
     const m = Math.max(...errs);
-    worst = ` · 최악 프레임 ${frameNo(errs.indexOf(m))} (${m.toFixed(2)}px)`;
+    worst = ` · 최악 프레임 ${frameLabel(errs.indexOf(m))} (${m.toFixed(2)}px)`;
   }
   let srcLabel = "";
   if (ctx && ctx.session) {
@@ -490,7 +492,7 @@ function renderRectQuality(info, ctx) {
       : ` <i>('재계산'을 한 번 실행하면 막대 클릭으로 원본 이미지를 확인할 수 있습니다.)</i>`) +
     `</div>` +
     (canView
-      ? `<div class="q-view" id="rect-q-view" hidden><img id="rect-q-view-img" alt="선택 프레임"><div class="q-view-cap" id="rect-q-view-cap"></div></div>`
+      ? `<div class="q-view" id="rect-q-view" hidden><button type="button" class="q-view-close" id="rect-q-view-close">✕ 닫기</button><img id="rect-q-view-img" alt="선택 프레임"><div class="q-view-cap" id="rect-q-view-cap"></div></div>`
       : ``) +
     `<details class="q-detail"><summary>K·왜곡계수 보기</summary><pre>${fmtK(info.K)}\n\ndist: ${JSON.stringify(info.dist)}</pre></details>` +
     `<details class="q-help"><summary>이 수치는 무엇인가요?</summary><ul>` +
@@ -500,15 +502,27 @@ function renderRectQuality(info, ctx) {
     `<li><b>dist(왜곡계수)</b>: 렌즈 왜곡. pinhole=k1,k2,p1,p2,k3 / fisheye=k1~k4.</li>` +
     `</ul></details>`;
   if (canView) {
+    const view = document.getElementById("rect-q-view");
+    const collapse = () => {
+      view.hidden = true;
+      el.querySelectorAll(".pv-bar").forEach((b) => b.classList.remove("pv-sel"));
+    };
+    const closeBtn = document.getElementById("rect-q-view-close");
+    if (closeBtn) closeBtn.addEventListener("click", collapse);
     el.querySelectorAll(".pv-bar.pv-click").forEach((bar) => {
       bar.addEventListener("click", () => {
+        // 이미 선택된 막대를 다시 클릭하면 접기(토글)
+        if (bar.classList.contains("pv-sel")) {
+          collapse();
+          return;
+        }
         const i = Number(bar.dataset.i);
         const fno = used[i];
         document.getElementById("rect-q-view-img").src =
           `/api/calib/frame/intrinsic/${encodeURIComponent(ctx.session)}/${ctx.dev}/${fno}?t=${Date.now()}`;
         document.getElementById("rect-q-view-cap").textContent =
-          `프레임 ${fno} · 재투영 오차 ${errs[i]}px`;
-        document.getElementById("rect-q-view").hidden = false;
+          `${frameLabel(i)} · 재투영 오차 ${errs[i]}px`;
+        view.hidden = false;
         el.querySelectorAll(".pv-bar").forEach((b) => b.classList.remove("pv-sel"));
         bar.classList.add("pv-sel");
       });

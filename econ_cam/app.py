@@ -585,6 +585,17 @@ def create_app(width=1920, height=1080):
                 out.append(fh.read())
         return out
 
+    def _used_files(session_dir, dev, used_indices):
+        """used_indices(정렬 위치)를 실제 .jpg 파일 이름으로 매핑 — 품질 그래프 라벨용.
+        정렬 규칙은 _load_session_jpegs·api_calib_frame과 동일."""
+        if not used_indices:
+            return None
+        d = os.path.join(session_dir, f"video{dev}")
+        if not os.path.isdir(d):
+            return None
+        files = sorted(f for f in os.listdir(d) if f.endswith(".jpg"))
+        return [files[j] for j in used_indices if 0 <= j < len(files)]
+
     @app.route("/api/calib/frame/<sub_mode>/<name>/<int:dev>/<int:idx>")
     def api_calib_frame(sub_mode, name, dev, idx):
         """저장된 캘리브레이션 프레임(video<dev>/ 정렬 idx번째)을 반환 — 품질 리포트에서 나쁜 이미지 확인용."""
@@ -653,6 +664,7 @@ def create_app(width=1920, height=1080):
                 cameras[str(dev)] = {
                     "rms": intr.rms, "per_view_errors": intr.per_view_errors,
                     "used_indices": intr.used_indices,
+                    "used_files": _used_files(session_dir, dev, intr.used_indices),
                     "n_images": intr.n_images, "image_size": list(intr.image_size),
                     "K": intr.K, "dist": intr.dist, "cached": cached,
                     "verdict": calib_quality.intrinsic_verdict(intr.rms)}
@@ -682,6 +694,7 @@ def create_app(width=1920, height=1080):
                 cams[str(dev)] = {
                     "has": True, "model": intr.model, "rms": intr.rms,
                     "per_view_errors": intr.per_view_errors, "used_indices": intr.used_indices,
+                    "used_files": _used_files(session_dir, dev, intr.used_indices),
                     "n_images": intr.n_images,
                     "image_size": list(intr.image_size), "K": intr.K, "dist": intr.dist,
                     "verdict": calib_quality.intrinsic_verdict(intr.rms)}
