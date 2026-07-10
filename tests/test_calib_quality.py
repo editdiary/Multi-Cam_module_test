@@ -40,3 +40,13 @@ def test_coverage_and_diversity():
     assert diversity_check(d_center, [d_center])["novel"] is False
     assert diversity_check({"center_x": 0.05, "center_y": 0.05, "area_frac": 0.02},
                            [d_center])["novel"] is True
+
+
+def test_intrinsic_verdict_levels():
+    from econ_cam.calib_quality import intrinsic_verdict
+    assert intrinsic_verdict(0.3)["level"] == "excellent"
+    assert intrinsic_verdict(0.7)["level"] == "good"
+    assert intrinsic_verdict(1.5)["level"] == "fair"
+    assert intrinsic_verdict(3.0)["level"] == "poor"
+    v = intrinsic_verdict(0.812)
+    assert v["label"] and v["rms"] == 0.812

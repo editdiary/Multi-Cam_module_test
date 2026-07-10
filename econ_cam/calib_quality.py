@@ -45,6 +45,19 @@ def verdict_from_metrics(m: dict, t: dict = THRESH) -> dict:
     return {"ok": ok, "reasons": reasons, "checks": checks}
 
 
+def intrinsic_verdict(rms: float) -> dict:
+    """재투영 오차(RMS, px)를 품질 등급으로. <0.5 매우좋음 / <1 양호 / <2 보통 / 그외 미흡."""
+    if rms < 0.5:
+        level, label = "excellent", "매우 좋음"
+    elif rms < 1.0:
+        level, label = "good", "양호"
+    elif rms < 2.0:
+        level, label = "fair", "보통"
+    else:
+        level, label = "poor", "미흡"
+    return {"level": level, "label": label, "rms": round(float(rms), 4)}
+
+
 def _cell(desc: dict):
     cx = min(COVER_GRID - 1, int(desc["center_x"] * COVER_GRID))
     cy = min(COVER_GRID - 1, int(desc["center_y"] * COVER_GRID))

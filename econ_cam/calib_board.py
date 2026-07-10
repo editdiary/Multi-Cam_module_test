@@ -44,6 +44,17 @@ def parse_board_config(d: dict) -> BoardConfig:
     return cfg
 
 
+def object_points(cfg: BoardConfig) -> list[tuple[float, float, float]]:
+    """체커보드 내부 코너의 3D 좌표(z=0). findChessboardCornersSB((cols,rows)) 순서와 동일:
+    각 행마다 cols개, 총 rows개 행(행 우선)."""
+    s = cfg.square_mm
+    return [
+        (col * s, row * s, 0.0)
+        for row in range(cfg.rows)
+        for col in range(cfg.cols)
+    ]
+
+
 def adjacent_pairs(devs: list, ring: bool = False) -> list:
     """Overlapping camera pairs. Linear array: (0,1),(1,2),... Ring adds (first,last)."""
     s = sorted(devs)
