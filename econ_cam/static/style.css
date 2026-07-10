@@ -85,6 +85,29 @@ select {
 .grid figure { margin: 0; }
 .grid img { width: 100%; border-radius: 8px; }
 .grid figcaption { text-align: center; padding: 4px; color: #aaa; }
+.grid.pair { grid-template-columns: 1fr 1fr; }
+.rsubmode { display: none; }
+.rsubmode.active { display: block; }
+.rect-msg {
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  min-height: 200px; padding: 16px; border-radius: 8px;
+  background: #222; color: #aaa; border: 1px dashed #444;
+}
+.quality-panel { margin: 10px 0; padding: 12px; background: #242424; border-radius: 8px; }
+.q-head { font-weight: 600; color: #ccc; margin-bottom: 6px; }
+.q-rms { font-size: 1.1em; font-weight: 700; }
+.q-meta { color: #aaa; font-size: 0.9em; margin: 4px 0 8px; }
+.q-exc { color: #2d7; } .q-good { color: #7c7; } .q-fair { color: #dc6; } .q-poor { color: #e66; }
+.pv-bars { display: flex; align-items: flex-end; gap: 3px; height: 60px; }
+.pv-bar { width: 10px; background: #2d7; border-radius: 2px 2px 0 0; min-height: 4px; }
+.pv-good { background: #2d7; } .pv-fair { background: #dc6; } .pv-poor { background: #e66; }
+.q-detail { margin-top: 8px; color: #aaa; }
+.q-detail pre { background: #1a1a1a; padding: 8px; border-radius: 6px; overflow-x: auto; }
+.q-src { color: #888; font-weight: 400; font-size: 0.85em; }
+.q-note { color: #aaa; font-size: 0.85em; margin: 2px 0 8px; }
+.q-help { margin-top: 8px; color: #aaa; }
+.q-help ul { margin: 6px 0 0 18px; padding: 0; }
+.q-help li { margin: 3px 0; }
 .status-line {
   margin: 12px 0;
   padding: 10px 14px;

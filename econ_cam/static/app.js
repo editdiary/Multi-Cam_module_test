@@ -40,10 +40,11 @@ function setMode(mode) {
   document.querySelectorAll(".mode").forEach((s) =>
     s.classList.toggle("active", s.id === mode)
   );
-  Promise.all([stopStreams(), stopSync(), stopCalib()]).then(() => {
+  Promise.all([stopStreams(), stopSync(), stopCalib(), stopRectify()]).then(() => {
     if (mode === "single") startSinglePreview();
     if (mode === "multi") startSyncSession();
     if (mode === "calib") startCalib();
+    if (mode === "rectify") startRectify();
   });
 }
 
@@ -280,6 +281,272 @@ function setCalibSub(sub) {
   document.getElementById("cam-pick-int").hidden = sub !== "intrinsic";
   document.getElementById("cam-pick-ext").hidden = sub !== "extrinsic";
   Promise.all([stopStreams(), stopSync(), stopCalib()]).then(startCalib);
+}
+
+// ---- Mode 4: 보정(Rectification) ----
+let rectSub = "single";
+
+function stopRectify() {
+  ["rect-orig", "rect-rect"].forEach((id) => {
+    const e = document.getElementById(id);
+    if (e) { e.removeAttribute("src"); if (id === "rect-rect") e.hidden = true; }
+  });
+  const g = document.getElementById("rect-multi-grid");
+  if (g) g.innerHTML = "";
+  return jsonPost("/api/sync/stop", {}).catch(() => {});
+}
+
+async function startRectify() {
+  await populateRectSessions();
+  loadRectSingleCam();
+  loadRectMultiCams();
+  if (rectSub === "single") startRectSingle();
+  else startRectMulti();
+}
+
+function loadRectSingleCam() {
+  document.getElementById("rect-single-cam").innerHTML =
+    `<option value="">카메라 선택</option>` +
+    cameras.map((c) => `<option value="${c.dev}">${c.label}</option>`).join("");
+}
+
+let rectSessions = {};   // name -> devs[]
+async function populateRectSessions() {
+  const list = await api("/api/rectify/sessions?sub_mode=intrinsic");
+  rectSessions = {};
+  list.forEach((s) => (rectSessions[s.name] = s.devs));
+  const opts = list.length
+    ? list.map((s) => `<option value="${s.name}">${s.name} (cam ${s.devs.join(",")})</option>`).join("")
+    : `<option value="">(계산 가능한 폴더 없음)</option>`;
+  ["rect-session", "rect-multi-session"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = opts;
+  });
+}
+
+function loadRectMultiCams() {
+  document.getElementById("rect-multi-cams").innerHTML = cameras
+    .map((c) => `<label><input type="checkbox" value="${c.dev}" checked> ${c.label}</label>`)
+    .join("");
+}
+
+function setRectSub(sub) {
+  rectSub = sub;
+  document.querySelectorAll(".rsubtab").forEach((t) =>
+    t.classList.toggle("active", t.dataset.rsub === sub)
+  );
+  document.querySelectorAll(".rsubmode").forEach((s) =>
+    s.classList.toggle("active", s.id === `rectify-${sub}`)
+  );
+  Promise.all([stopRectify()]).then(startRectify);
+}
+
+let rectSingleStatus = {};   // 현재 선택 폴더+모델의 카메라별 상태
+
+async function computeRectIntrinsics() {
+  const session = document.getElementById("rect-session").value;
+  const model = document.getElementById("rect-model").value;
+  const force = document.getElementById("rect-force").checked;
+  const st = document.getElementById("rect-status");
+  if (!session) {
+    toast("캘리브레이션 폴더(세션)를 선택하세요");
+    return;
+  }
+  st.textContent = "계산 중… (이미지 수에 따라 수 초 걸릴 수 있습니다)";
+  st.className = "status-line";
+  try {
+    const r = await jsonPost("/api/rectify/compute", { session, sub_mode: "intrinsic", model, force });
+    if (!r.ok) {
+      st.textContent = "실패: " + (r.error || "계산 실패");
+      st.className = "status-line bad";
+      return;
+    }
+    const done = Object.keys(r.cameras).map((d) => "video" + d);
+    const errs = Object.entries(r.errors || {}).map(([d, m]) => `video${d}: ${m}`);
+    st.textContent = `폴더 ${session} · ${model} · intrinsic: ${done.join(", ") || "없음"}`
+      + (errs.length ? ` · 실패 ${errs.join("; ")}` : "");
+    st.className = errs.length ? "status-line" : "status-line good";
+    await refreshRectSingleStatus();     // 게이팅·품질 갱신
+  } catch (e) {
+    st.textContent = "오류: 계산 요청이 실패했습니다. 폴더·이미지·서버 로그를 확인하세요.";
+    st.className = "status-line bad";
+  }
+}
+
+function previewRectSingle() {
+  const dev = document.getElementById("rect-single-cam").value;
+  if (dev !== "") document.getElementById("rect-orig").src = `/api/stream/${dev}/mjpeg?t=${Date.now()}`;
+  refreshRectSingleStatus();
+}
+
+function startRectSingle() {
+  previewRectSingle();
+}
+
+async function refreshRectSingleStatus() {
+  // 선택 카메라·폴더·모델 기준으로 토글 활성 여부·품질을 갱신(폴더가 진실의 원천).
+  const dev = document.getElementById("rect-single-cam").value;
+  const session = document.getElementById("rect-session").value;
+  const model = document.getElementById("rect-model").value;
+  const toggle = document.getElementById("rect-toggle");
+  const hint = document.getElementById("rect-toggle-hint");
+  rectSingleStatus = session
+    ? (await api(`/api/rectify/session_status?session=${encodeURIComponent(session)}&model=${model}`)).cameras
+    : {};
+  const info = dev === "" ? undefined : rectSingleStatus[dev];
+  const ready = !!(info && info.has);
+  toggle.disabled = !ready;
+  if (!ready) toggle.checked = false;
+  if (hint) hint.textContent = ready ? "" :
+    (dev === "" ? "카메라를 선택하세요"
+     : !session ? "폴더를 선택하세요"
+     : `video${dev} intrinsic 없음 — 이 폴더에서 '불러오기/계산' 필요`);
+  if (ready) renderRectQuality(info, { session, dev, model });
+  else renderRectQuality(null);
+  updateRectSingleRight();
+}
+
+function updateRectSingleRight() {
+  const dev = document.getElementById("rect-single-cam").value;
+  const session = document.getElementById("rect-session").value;
+  const model = document.getElementById("rect-model").value;
+  const t = document.getElementById("rect-toggle");
+  const on = t.checked && !t.disabled;
+  const img = document.getElementById("rect-rect");
+  const msg = document.getElementById("rect-rect-msg");
+  if (on && dev !== "" && session) {
+    msg.hidden = true;
+    img.hidden = false;
+    img.src = `/api/rectify/stream/${dev}?session=${encodeURIComponent(session)}&model=${model}&t=${Date.now()}`;
+  } else {
+    img.hidden = true;
+    img.removeAttribute("src");
+    msg.hidden = false;
+    msg.textContent = t.disabled
+      ? "이 카메라·폴더의 intrinsic이 없습니다 — 먼저 'Intrinsic 불러오기/계산'을 누르세요."
+      : "보정 표시가 꺼져 있습니다";
+  }
+}
+
+function rectLevelClass(level) {
+  return { excellent: "q-exc", good: "q-good", fair: "q-fair", poor: "q-poor" }[level] || "";
+}
+
+function fmtK(K) {
+  if (!K) return "";
+  return K.map((row) => row.map((x) => Number(x).toFixed(2).padStart(9)).join(" ")).join("\n");
+}
+
+function renderRectQuality(info, ctx) {
+  const el = document.getElementById("rect-quality");
+  if (!info || info.has === false) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  const v = info.verdict || {};
+  const errs = info.per_view_errors || [];
+  const size = info.image_size || [];
+  const maxScale = Math.max(2.0, ...errs, 0.001);
+  const bars = errs
+    .map((e, i) => {
+      const cls = e < 1.0 ? "pv-good" : e < 2.0 ? "pv-fair" : "pv-poor";
+      const ht = Math.max(4, Math.round((e / maxScale) * 100));
+      return `<div class="pv-bar ${cls}" style="height:${ht}%" title="이미지 ${i}: ${e}px"></div>`;
+    })
+    .join("");
+  let worst = "";
+  if (errs.length) {
+    const m = Math.max(...errs);
+    worst = ` · 최악 #${errs.indexOf(m)} ${m.toFixed(2)}px`;
+  }
+  let srcLabel = "";
+  if (ctx && ctx.session) {
+    const devTxt = ctx.dev != null && ctx.dev !== "" ? ` · video${ctx.dev}` : "";
+    srcLabel = ` <span class="q-src">(폴더 ${ctx.session}${devTxt})</span>`;
+  }
+  el.hidden = false;
+  el.innerHTML =
+    `<div class="q-head">캘리브레이션 품질${srcLabel}</div>` +
+    `<div class="q-rms ${rectLevelClass(v.level)}">재투영 오차 RMS ${Number(info.rms).toFixed(3)} px — ${v.label || ""}</div>` +
+    `<div class="q-note">추정한 K·왜곡으로 체커보드 코너를 다시 투영했을 때 실제 검출 위치와의 평균 오차입니다. <b>낮을수록 정확</b> (보통 &lt;1px 양호).</div>` +
+    `<div class="q-meta">사용 이미지 ${info.n_images || errs.length}장 · ${info.model} · ${size[0]}×${size[1]}${worst}</div>` +
+    `<div class="pv-bars">${bars}</div>` +
+    `<div class="q-note">↑ 막대 = 이미지별 재투영 오차. 유독 높은 막대(빨강)는 흔들림/검출 오류일 수 있어, 그 이미지를 빼고 다시 촬영·계산하면 개선될 수 있습니다.</div>` +
+    `<details class="q-detail"><summary>K·왜곡계수 보기</summary><pre>${fmtK(info.K)}\n\ndist: ${JSON.stringify(info.dist)}</pre></details>` +
+    `<details class="q-help"><summary>이 수치는 무엇인가요?</summary><ul>` +
+    `<li><b>재투영 오차(RMS)</b>: 캘리브레이션 정확도. 낮을수록 좋음. 매우 좋음&lt;0.5 / 양호&lt;1 / 보통&lt;2 / 미흡≥2 px.</li>` +
+    `<li><b>이미지별 오차</b>: 각 촬영 장면의 오차. 특정 이미지만 크면 그 장면 품질이 낮은 것.</li>` +
+    `<li><b>K(내부 행렬)</b>: fx·fy = 초점거리(px), cx·cy = 주점(광학 중심 좌표).</li>` +
+    `<li><b>dist(왜곡계수)</b>: 렌즈 왜곡. pinhole=k1,k2,p1,p2,k3 / fisheye=k1~k4.</li>` +
+    `</ul></details>`;
+}
+
+
+function selectedRectMultiDevs() {
+  return [...document.querySelectorAll("#rect-multi-cams input:checked")].map((c) => Number(c.value));
+}
+
+let rectMultiInfo = {};
+
+function rectMultiOn() {
+  return document.getElementById("rect-multi-toggle").checked;
+}
+function rectMultiModel() {
+  return document.getElementById("rect-multi-model").value;
+}
+function rectMultiSession() {
+  return document.getElementById("rect-multi-session").value;
+}
+
+async function startRectMulti() {
+  const devs = selectedRectMultiDevs();
+  if (!devs.length) return;
+  await jsonPost("/api/sync/start", { devices: devs, sync_mode: 1 });
+  await jsonPost("/api/rectify/multi_toggle", { on: rectMultiOn() });
+  await buildRectMultiGrid(devs);
+}
+
+async function buildRectMultiGrid(devs) {
+  // 선택 폴더+모델의 카메라별 상태를 한 번 조회해 캐시. 스트림은 카메라당 하나(연결 1개) —
+  // 폴더·모델을 URL에 실어 서버가 판단하며, 토글해도 재생성하지 않는다.
+  const session = rectMultiSession(), model = rectMultiModel();
+  rectMultiInfo = session
+    ? (await api(`/api/rectify/session_status?session=${encodeURIComponent(session)}&model=${model}`)).cameras
+    : {};
+  const t = Date.now();
+  const q = session ? `?session=${encodeURIComponent(session)}&model=${model}&t=${t}` : `?t=${t}`;
+  document.getElementById("rect-multi-grid").innerHTML = devs
+    .map(
+      (d) =>
+        `<figure><img id="rect-m-${d}" src="/api/rectify/sync/stream/${d}${q}">` +
+        `<figcaption id="rect-m-cap-${d}"></figcaption></figure>`
+    )
+    .join("");
+  updateRectMultiCaptions(devs);
+  gateRectMultiToggle(devs);
+}
+
+function gateRectMultiToggle(devs) {
+  const any = devs.some((d) => rectMultiInfo[String(d)] && rectMultiInfo[String(d)].has);
+  const t = document.getElementById("rect-multi-toggle");
+  t.disabled = !any;
+  if (!any) t.checked = false;
+}
+
+function multiCaptionText(d) {
+  const info = rectMultiInfo[String(d)] || {};
+  const on = rectMultiOn();
+  if (info.has)
+    return `video${d} (${on ? "보정" : "원본"}) · ${info.model} RMS ${Number(info.rms).toFixed(2)}`;
+  return `video${d} (원본) · intrinsic 없음 — 이 폴더에서 계산 필요`;
+}
+
+function updateRectMultiCaptions(devs) {
+  devs.forEach((d) => {
+    const cap = document.getElementById(`rect-m-cap-${d}`);
+    if (cap) cap.textContent = multiCaptionText(d);
+  });
 }
 
 function renderVerdict(el, verdict, diversity) {
@@ -669,6 +936,34 @@ document.getElementById("calib-ext-cams").addEventListener("change", () => {
 document.querySelectorAll(".tab").forEach((t) =>
   t.addEventListener("click", () => setMode(t.dataset.mode))
 );
+document.querySelectorAll(".rsubtab").forEach((t) =>
+  t.addEventListener("click", () => setRectSub(t.dataset.rsub))
+);
+document.getElementById("rect-compute").addEventListener("click", computeRectIntrinsics);
+document.getElementById("rect-single-cam").addEventListener("change", () => {
+  if (activeMode() === "rectify" && rectSub === "single") previewRectSingle();
+});
+document.getElementById("rect-session").addEventListener("change", () => {
+  if (activeMode() === "rectify" && rectSub === "single") refreshRectSingleStatus();
+});
+document.getElementById("rect-model").addEventListener("change", () => {
+  if (activeMode() === "rectify" && rectSub === "single") refreshRectSingleStatus();
+});
+document.getElementById("rect-toggle").addEventListener("change", updateRectSingleRight);
+document.getElementById("rect-multi-start").addEventListener("click", startRectMulti);
+document.getElementById("rect-multi-cams").addEventListener("change", () => {
+  if (activeMode() === "rectify" && rectSub === "multi") stopSync().then(startRectMulti);
+});
+document.getElementById("rect-multi-session").addEventListener("change", () => {
+  if (activeMode() === "rectify" && rectSub === "multi") stopSync().then(startRectMulti);
+});
+document.getElementById("rect-multi-model").addEventListener("change", () => {
+  if (activeMode() === "rectify" && rectSub === "multi") stopSync().then(startRectMulti);
+});
+document.getElementById("rect-multi-toggle").addEventListener("change", async () => {
+  await jsonPost("/api/rectify/multi_toggle", { on: rectMultiOn() });
+  updateRectMultiCaptions(selectedRectMultiDevs());   // 연결 재생성 없이 서버에서 내용만 전환
+});
 document
   .getElementById("single-cam")
   .addEventListener("change", startSinglePreview);
