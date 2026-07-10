@@ -3,8 +3,9 @@
 이 저장소에서 작업할 때 참고할 핵심 사항. 상세 설계는 아래 spec을 참조.
 
 ## 프로젝트
-e-con AR0234 4-camera 모듈용 **웹 기반 카메라 테스트 도구** (Flask). 모드 3개: 단일 촬영 /
-다중 동기 촬영(+동기 검증) / 캘리브레이션(체커보드·ChArUco 이미지 수집+검증; intrinsic/extrinsic).
+e-con AR0234 4-camera 모듈용 **웹 기반 카메라 테스트 도구** (Flask). 모드 4개: 단일 촬영 /
+다중 동기 촬영(+동기 검증) / 캘리브레이션(체커보드·ChArUco 이미지 수집+검증; intrinsic/extrinsic) /
+보정 확인(수집 이미지로 intrinsic 실계산 + 단일·다중 실시간 왜곡 보정 시각화).
 ROS2 통합은 별도 계획으로 분리.
 
 ## 하드웨어 핵심 사실
@@ -15,8 +16,10 @@ ROS2 통합은 별도 계획으로 분리.
 
 ## 기술 결정 (확정)
 - **캡처+이미지처리 = GStreamer** (Python `gi` + `appsink`, HW `nvvidconv`/`nvjpegenc`).
-  촬영·인코딩에는 cv2 미사용. **단, Mode 3 캘리브레이션의 체커보드/ChArUco 코너 검출·품질 검증에는
-  cv2 사용**(`opencv-contrib-python`, venv 전용). 실제 K/extrinsic 행렬 계산은 오프라인 후속(범위 밖).
+  촬영·인코딩에는 cv2 미사용. **단, Mode 3 캘리브레이션의 체커보드/ChArUco 코너 검출·품질 검증,
+  그리고 Mode 4 보정 확인의 intrinsic 계산(`calibrateCamera`/`fisheye.calibrate`)·실시간 undistort
+  (`cv2.remap`)에는 cv2 사용**(`opencv-contrib-python`, venv 전용). 실제 extrinsic 행렬 계산은
+  오프라인 후속(범위 밖).
 - **동기 타임스탬프 = appsink 버퍼 PTS**. 다중 동기는 **단일 파이프라인(N개 v4l2src, 공유 클럭)** 에서 PTS 비교.
 - **환경 = venv** (`--system-site-packages`) + `pip install -r requirements.txt`
   (flask + opencv-contrib-python). GStreamer·`gi`는 시스템 재사용. numpy는 opencv 4.8 요구로
@@ -30,7 +33,8 @@ ROS2 통합은 별도 계획으로 분리.
   `pytest`로 검증. 실제 캡처·동기·캘리브레이션 촬영은 4대에서 수동 검증.
 - 파일은 관심사별로 작게 유지: `econ_cam/{gst_pipeline,capture,controls,stats,app}.py`.
   캘리브레이션은 `econ_cam/{calib_board,calib_quality,calib_detect}.py`
-  (board·quality는 순수 로직, detect는 cv2).
+  (board·quality는 순수 로직, detect는 cv2). 보정 확인(Mode 4)의 intrinsic 계산·undistort·remap은
+  `econ_cam/calib_intrinsics.py`(cv2).
 
 ## Git 작업 방식
 - **새 기능 추가·테스트는 항상 새 브랜치**에서 진행한다(`main`/`develop`에서 직접 작업 금지).

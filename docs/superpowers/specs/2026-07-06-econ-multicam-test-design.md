@@ -9,6 +9,12 @@
 > 이를 위해 `cv2`(opencv-contrib-python, venv 전용)를 도입했다(원 설계 §10의 "cv2 필요 시 추가" 실행).
 > 실제 K/extrinsic 행렬 **계산**은 여전히 범위 밖(오프라인 후속). 아래 Mode 3 관련 절(§2, §8.Mode 3, §9)은
 > 이 노트로 갱신된 것으로 본다. 상세: `docs/superpowers/plans/2026-07-08-calibration-mode.md`, 사용법: `docs/USAGE.md`.
+>
+> **갱신 노트 (2026-07-09):** **Mode 4 — 보정 확인**을 추가했다. Mode 3가 수집한 intrinsic 이미지로
+> **실제 intrinsic(K·왜곡계수)을 계산**(`cv2.calibrateCamera`/`cv2.fisheye.calibrate`, pinhole/fisheye
+> UI 선택)하고, 단일/다중 카메라 라이브를 **실시간 undistort**(`cv2.remap`)해 좌(원본)/우(보정)로 시각
+> 검증한다. Extrinsic 행렬 계산은 여전히 범위 밖(시각화로 확인 불가). 상세:
+> `docs/superpowers/plans/2026-07-09-rectify-mode.md`, 모듈: `econ_cam/calib_intrinsics.py`.
 
 ---
 
