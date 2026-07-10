@@ -9,7 +9,8 @@ from datetime import datetime
 
 from flask import Flask, Response, jsonify, render_template, request
 
-from econ_cam import capture, controls, calib_board, calib_detect, calib_quality
+from econ_cam import capture, controls, calib_board, calib_detect, calib_quality, calib_intrinsics
+from econ_cam.gst_pipeline import PREVIEW_WIDTH, PREVIEW_HEIGHT
 
 CAPTURE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "captures")
 CALIB_DIR = os.path.join(CAPTURE_DIR, "calib")
@@ -75,6 +76,7 @@ def create_app(width=1920, height=1080):
         "last": {},        # {dev: jpeg_bytes} 최근 캡처
         "last_stats": None,
         "calib": None,     # 캘리브레이션 세션 accumulator (아래 /api/calib/* 참조)
+        "rectify": {"maps": {}, "multi_on": False},  # {(session,model,dev): (map1,map2)} 보정 LUT 캐시 + 다중 보정 플래그
         "width": width,
         "height": height,
         "lock": threading.Lock(),
@@ -89,6 +91,7 @@ def create_app(width=1920, height=1080):
         if state["sync_session"] is not None:
             state["sync_session"].stop()
             state["sync_session"] = None
+        state["rectify"]["multi_on"] = False     # 세션 종료 시 보정 플래그 해제
 
     def get_or_start_stream(dev):
         cam = state["streams"].get(dev)
@@ -118,6 +121,8 @@ def create_app(width=1920, height=1080):
 
     @app.route("/api/stream/<int:dev>/mjpeg")
     def api_stream(dev):
+        if state["sync_session"] is not None:
+            return ("동기 세션 활성 중 — 단일 스트림 불가", 409)
         with state["lock"]:
             cam = get_or_start_stream(dev)
 
@@ -532,5 +537,198 @@ def create_app(width=1920, height=1080):
         else:
             resp["pairs"] = _pairs_list(cs)
         return jsonify(resp)
+
+    # ---- Mode 4: 보정(Rectification) ----
+
+    def _session_dir(sub_mode, name):
+        return os.path.join(CALIB_DIR, sub_mode, name)
+
+    def _session_devs(session_dir, min_images=4):
+        """video<n>/ 서브폴더 중 jpg가 min_images장 이상인 카메라 번호(정렬)."""
+        devs = []
+        if not os.path.isdir(session_dir):
+            return devs
+        for n in sorted(os.listdir(session_dir)):
+            p = os.path.join(session_dir, n)
+            if n.startswith("video") and os.path.isdir(p):
+                n_jpg = sum(1 for f in os.listdir(p) if f.endswith(".jpg"))
+                if n_jpg >= min_images:
+                    try:
+                        devs.append(int(n[len("video"):]))
+                    except ValueError:
+                        pass
+        return devs
+
+    def _intr_path(session_dir, dev, model):
+        return os.path.join(session_dir, f"video{dev}_{model}.json")
+
+    def _load_session_jpegs(session_dir, dev):
+        d = os.path.join(session_dir, f"video{dev}")
+        if not os.path.isdir(d):
+            return []
+        files = sorted(f for f in os.listdir(d) if f.endswith(".jpg"))
+        out = []
+        for f in files:
+            with open(os.path.join(d, f), "rb") as fh:
+                out.append(fh.read())
+        return out
+
+    @app.route("/api/rectify/sessions")
+    def api_rectify_sessions():
+        """계산 가능한 폴더만 목록화(board_config.json + video<n>/ jpg ≥4장). 이름 무관."""
+        sub_mode = request.args.get("sub_mode", "intrinsic")
+        base = os.path.join(CALIB_DIR, sub_mode)
+        out = []
+        if os.path.isdir(base):
+            for name in sorted(os.listdir(base)):
+                sdir = os.path.join(base, name)
+                if not os.path.isdir(sdir):
+                    continue
+                if not os.path.exists(os.path.join(sdir, "board_config.json")):
+                    continue
+                devs = _session_devs(sdir)
+                if devs:
+                    out.append({"name": name, "devs": devs})
+        return jsonify(out)
+
+    @app.route("/api/rectify/compute", methods=["POST"])
+    def api_rectify_compute():
+        """선택 폴더의 모든 video<n>/에 대해 video<n>_<model>.json을 로드/계산·저장(세션 폴더 안)."""
+        body = request.get_json(force=True)
+        sub_mode = body.get("sub_mode", "intrinsic")
+        name = body["session"]
+        model = body.get("model", "pinhole")
+        force = bool(body.get("force"))
+        session_dir = _session_dir(sub_mode, name)
+        if not os.path.isdir(session_dir):
+            return jsonify({"ok": False, "error": "세션 없음"}), 404
+        devs = _session_devs(session_dir)
+        if not devs:
+            return jsonify({"ok": False, "error": "폴더에 계산 가능한 카메라 이미지가 없습니다"}), 400
+        cfg = None
+        cameras, errors = {}, {}
+        for dev in devs:
+            path = _intr_path(session_dir, dev, model)
+            try:
+                if os.path.exists(path) and not force:
+                    intr = calib_intrinsics.load_intrinsics(path)
+                    cached = True
+                else:
+                    if cfg is None:
+                        with open(os.path.join(session_dir, "board_config.json")) as f:
+                            cfg = calib_board.parse_board_config(json.load(f))
+                    intr = calib_intrinsics.compute_intrinsics(
+                        _load_session_jpegs(session_dir, dev), cfg, model=model)
+                    calib_intrinsics.save_intrinsics(path, intr)
+                    cached = False
+                cameras[str(dev)] = {
+                    "rms": intr.rms, "per_view_errors": intr.per_view_errors,
+                    "n_images": intr.n_images, "image_size": list(intr.image_size),
+                    "K": intr.K, "dist": intr.dist, "cached": cached,
+                    "verdict": calib_quality.intrinsic_verdict(intr.rms)}
+                with state["lock"]:
+                    state["rectify"]["maps"].pop((name, model, dev), None)  # 재계산 시 맵 무효화
+            except (ValueError, OSError) as e:
+                errors[str(dev)] = str(e)
+        return jsonify({"ok": True, "session": name, "model": model,
+                        "cameras": cameras, "errors": errors})
+
+    @app.route("/api/rectify/session_status")
+    def api_rectify_session_status():
+        """선택 폴더+모델에서 카메라별 intrinsic 유무·품질을 '계산 없이' 반환(게이팅·품질·캡션용)."""
+        name = request.args.get("session")
+        sub_mode = request.args.get("sub_mode", "intrinsic")
+        model = request.args.get("model", "pinhole")
+        if not name:
+            return jsonify({"session": None, "model": model, "cameras": {}})
+        session_dir = _session_dir(sub_mode, name)
+        cams = {}
+        for dev in _session_devs(session_dir):
+            path = _intr_path(session_dir, dev, model)
+            if os.path.exists(path):
+                intr = calib_intrinsics.load_intrinsics(path)
+                cams[str(dev)] = {
+                    "has": True, "model": intr.model, "rms": intr.rms,
+                    "per_view_errors": intr.per_view_errors, "n_images": intr.n_images,
+                    "image_size": list(intr.image_size), "K": intr.K, "dist": intr.dist,
+                    "verdict": calib_quality.intrinsic_verdict(intr.rms)}
+            else:
+                cams[str(dev)] = {"has": False}
+        return jsonify({"session": name, "model": model, "cameras": cams})
+
+    def _get_maps(session_dir, dev, model, cache_key):
+        """세션 폴더의 video<n>_<model>.json으로 프리뷰 해상도용 (map1,map2)를 캐시. 없으면 None."""
+        with state["lock"]:
+            m = state["rectify"]["maps"].get(cache_key)
+        if m is not None:
+            return m
+        path = _intr_path(session_dir, dev, model)
+        if not os.path.exists(path):
+            return None
+        intr = calib_intrinsics.load_intrinsics(path)
+        maps = calib_intrinsics.build_undistort_maps(
+            intr, (PREVIEW_WIDTH, PREVIEW_HEIGHT))
+        with state["lock"]:
+            state["rectify"]["maps"][cache_key] = maps
+        return maps
+
+    @app.route("/api/rectify/stream/<int:dev>")
+    def api_rectify_stream(dev):
+        if state["sync_session"] is not None:
+            return ("동기 세션 활성 중 — 단일 스트림 불가", 409)
+        name = request.args.get("session")
+        model = request.args.get("model", "pinhole")
+        sub_mode = request.args.get("sub_mode", "intrinsic")
+        if not name:
+            return ("session 필요", 404)
+        maps = _get_maps(_session_dir(sub_mode, name), dev, model, (name, model, dev))
+        if maps is None:
+            return ("intrinsic 없음", 404)
+        with state["lock"]:
+            cam = get_or_start_stream(dev)
+
+        def gen():
+            while state["streams"].get(dev) is cam:
+                jpeg = cam.latest_jpeg()
+                if jpeg is None:
+                    continue
+                out = calib_intrinsics.rectify_jpeg(jpeg, maps)
+                yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + out + b"\r\n")
+                time.sleep(1 / 15)
+
+        return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+    @app.route("/api/rectify/sync/stream/<int:dev>")
+    def api_rectify_sync_stream(dev):
+        # 다중 보정용 단일 스트림: 세션이 있으면 항상 스트림하고, 보정 여부는 서버 플래그로
+        # 전환한다(토글해도 연결을 재생성하지 않아 브라우저 연결 고갈을 막는다).
+        sess = state["sync_session"]
+        if sess is None:
+            return ("", 404)
+        name = request.args.get("session")
+        model = request.args.get("model", "pinhole")
+        sub_mode = request.args.get("sub_mode", "intrinsic")
+        session_dir = _session_dir(sub_mode, name) if name else None
+
+        def gen():
+            last = None
+            while state["sync_session"] is sess:
+                jpeg = sess.latest_jpeg(dev)
+                if jpeg is not None and jpeg is not last:
+                    last = jpeg
+                    out = jpeg
+                    if state["rectify"]["multi_on"] and session_dir:
+                        maps = _get_maps(session_dir, dev, model, (name, model, dev))
+                        if maps is not None:
+                            out = calib_intrinsics.rectify_jpeg(jpeg, maps)
+                    yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + out + b"\r\n")
+                time.sleep(0.02)
+
+        return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+    @app.route("/api/rectify/multi_toggle", methods=["POST"])
+    def api_rectify_multi_toggle():
+        state["rectify"]["multi_on"] = bool(request.get_json(force=True).get("on"))
+        return jsonify({"ok": True, "on": state["rectify"]["multi_on"]})
 
     return app
