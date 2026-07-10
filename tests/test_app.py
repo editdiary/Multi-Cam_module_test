@@ -164,6 +164,18 @@ def test_rectify_stream_needs_session_and_intrinsic(monkeypatch, tmp_path):
     assert r.status_code == 404 and "intrinsic" in r.get_data(as_text=True)    # 파일 없음
 
 
+def test_calib_frame_serves_stored_image(monkeypatch, tmp_path):
+    monkeypatch.setattr(app_module, "CALIB_DIR", str(tmp_path))
+    _make_session(tmp_path, name="s1", devs=(0,), n_img=3)   # frame_000..002 (더미 jpg)
+    client = app_module.create_app().test_client()
+    r = client.get("/api/calib/frame/intrinsic/s1/0/1")       # 정렬 1번째 프레임
+    assert r.status_code == 200
+    assert r.mimetype == "image/jpeg"
+    assert r.get_data() == b"\xff\xd8\xff\xd9"
+    assert client.get("/api/calib/frame/intrinsic/s1/0/9").status_code == 404   # 범위 초과
+    assert client.get("/api/calib/frame/bogus/s1/0/0").status_code == 400       # 잘못된 sub_mode
+
+
 def test_rectify_sync_stream_404_without_session():
     client = app_module.create_app().test_client()
     assert client.get("/api/rectify/sync/stream/0?session=s1&model=pinhole").status_code == 404

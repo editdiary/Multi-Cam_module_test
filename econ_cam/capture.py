@@ -46,31 +46,51 @@ class Camera:
     프리뷰(preview appsink)는 상시 저해상도로 흐르고, 원본 캡처(capture appsink)는
     valve(capgate)로 게이트되어 capture() 호출 순간에만 밸브를 열어 원본 1프레임을
     받는다. 프리뷰는 캡처 중에도 끊기지 않는다.
+
+    프리뷰는 SyncSession과 동일하게 new-sample 푸시 콜백으로 최신 JPEG를 캐시한다.
+    latest_jpeg()는 논블로킹 dict read라, MJPEG 스트림용 HTTP 제너레이터가 여러 개
+    붙거나 재연결돼도 appsink를 블로킹 pull로 점유하지 않아 프리뷰가 멈추지 않는다.
     """
 
-    def __init__(self, dev, width, height):
+    def __init__(self, dev, width, height,
+                 preview_width=gst_pipeline.PREVIEW_WIDTH,
+                 preview_height=gst_pipeline.PREVIEW_HEIGHT):
         self.dev = dev
         self.width = width
         self.height = height
+        self.preview_width = preview_width
+        self.preview_height = preview_height
         self._pipeline = None
         self._preview = None
         self._capture = None
         self._valve = None
+        self._latest = None
+        self._lock = threading.Lock()
 
     def start(self):
-        desc = gst_pipeline.preview_pipeline(self.dev, self.width, self.height)
+        desc = gst_pipeline.preview_pipeline(
+            self.dev, self.width, self.height, self.preview_width, self.preview_height)
         self._pipeline = Gst.parse_launch(desc)
         self._preview = self._pipeline.get_by_name("preview")
         self._capture = self._pipeline.get_by_name("capture")
         self._valve = self._pipeline.get_by_name("capgate")
+        self._preview.set_property("emit-signals", True)
+        self._preview.connect("new-sample", self._on_preview)
         self._pipeline.set_state(Gst.State.PLAYING)
 
+    def _on_preview(self, sink):
+        sample = sink.emit("pull-sample")
+        if sample is None:
+            return Gst.FlowReturn.OK
+        buf = sample.get_buffer()
+        data = buf.extract_dup(0, buf.get_size())
+        with self._lock:
+            self._latest = data
+        return Gst.FlowReturn.OK
+
     def latest_jpeg(self):
-        sink = self._preview
-        if sink is None:
-            return None
-        result = _pull(sink, 2.0)
-        return result[0] if result else None
+        with self._lock:
+            return self._latest
 
     def capture(self):
         sink = self._capture
@@ -96,6 +116,8 @@ class Camera:
             self._preview = None
             self._capture = None
             self._valve = None
+            with self._lock:
+                self._latest = None
 
 
 class SyncSession:
@@ -106,9 +128,13 @@ class SyncSession:
       stats.match_frames 로 PTS가 가장 잘 맞는 동일 시점 세트 선택(off-by-one 프레임 제거).
     """
 
-    def __init__(self, devs, width, height, sync_mode=1):
+    def __init__(self, devs, width, height, sync_mode=1,
+                 preview_width=gst_pipeline.PREVIEW_WIDTH,
+                 preview_height=gst_pipeline.PREVIEW_HEIGHT):
         self.devs = [int(d) for d in devs]
         self.width, self.height, self.sync_mode = width, height, sync_mode
+        self.preview_width = preview_width
+        self.preview_height = preview_height
         self._pipeline = None
         self._capture = {}       # {dev: capture appsink}
         self._valve = {}         # {dev: valve}
@@ -119,7 +145,8 @@ class SyncSession:
     def start(self):
         for d in self.devs:
             controls.set_frame_sync(d, self.sync_mode)
-        desc = gst_pipeline.sync_live_pipeline(self.devs, self.width, self.height)
+        desc = gst_pipeline.sync_live_pipeline(
+            self.devs, self.width, self.height, self.preview_width, self.preview_height)
         self._pipeline = Gst.parse_launch(desc)
         for d in self.devs:
             self._capture[d] = self._pipeline.get_by_name(f"capture{d}")

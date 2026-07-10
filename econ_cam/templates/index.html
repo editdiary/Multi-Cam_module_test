@@ -191,6 +191,10 @@
           <div class="toolbar-left">
             <select id="rect-single-cam"></select>
             <label class="rect-toggle-lbl"><input type="checkbox" id="rect-toggle" disabled> 보정 표시</label>
+            <label class="rect-alpha-lbl" title="0=유효 영역만 크롭(검은 여백 없음) ↔ 1=원본 전체 화각(가장자리 검은 여백)">
+              화각 <input type="range" id="rect-alpha" min="0" max="1" step="0.1" value="0">
+              <span id="rect-alpha-val">0.0</span>
+            </label>
             <span id="rect-toggle-hint" class="hint"></span>
           </div>
           <div class="actions">
@@ -226,6 +230,10 @@
             </select>
             <button id="rect-multi-start">라이브 시작</button>
             <label class="rect-toggle-lbl"><input type="checkbox" id="rect-multi-toggle" disabled> 보정 표시</label>
+            <label class="rect-alpha-lbl" title="0=유효 영역만 크롭(검은 여백 없음) ↔ 1=원본 전체 화각(가장자리 검은 여백)">
+              화각 <input type="range" id="rect-multi-alpha" min="0" max="1" step="0.1" value="0">
+              <span id="rect-multi-alpha-val">0.0</span>
+            </label>
           </div>
         </div>
         <div id="rect-multi-status" class="status-line">보정하려면 각 카메라에 활성 intrinsic이 필요합니다.</div>

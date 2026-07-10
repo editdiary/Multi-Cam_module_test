@@ -21,6 +21,7 @@ class Intrinsics:
     n_images: int
     board: dict
     source_session: str = ""     # 이 intrinsic을 계산한 세션(폴더) 이름 (활성본에 기록)
+    used_indices: list = None    # per_view_errors[i]에 대응하는 저장 프레임의 정렬 위치(원본 파일 추적용)
 
 
 def _decode_gray(jpeg):
@@ -74,7 +75,12 @@ def _per_view_errors(objpoints, imgpoints, rvecs, tvecs, K, dist, model):
 
 
 def build_undistort_maps(intr: Intrinsics, out_size, alpha: float = 0.0):
-    """out_size=(w,h) 해상도용 (map1,map2). K를 원본→out_size 비율로 스케일."""
+    """out_size=(w,h) 해상도용 (map1,map2). K를 원본→out_size 비율로 스케일.
+
+    alpha: 보정 결과의 화각/크롭을 통일된 의미로 조절(pinhole·fisheye 공통).
+      0.0 = 유효 픽셀만 남겨 크롭/확대(검은 여백 없음), 1.0 = 원본 전체 화각 유지(검은 여백 발생).
+      pinhole은 getOptimalNewCameraMatrix의 alpha와 동일, fisheye는 balance=alpha로 맞춰
+      두 모델이 슬라이더에서 같은 방향으로 동작하게 한다."""
     ow, oh = out_size
     iw, ih = intr.image_size
     sx, sy = ow / iw, oh / ih
@@ -86,7 +92,7 @@ def build_undistort_maps(intr: Intrinsics, out_size, alpha: float = 0.0):
     if intr.model == "fisheye":
         D = dist.reshape(-1, 1)[:4]
         newK = cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(
-            K, D, (ow, oh), np.eye(3), balance=1.0 - alpha)
+            K, D, (ow, oh), np.eye(3), balance=alpha)
         m1, m2 = cv2.fisheye.initUndistortRectifyMap(
             K, D, np.eye(3), newK, (ow, oh), cv2.CV_16SC2)
     else:
@@ -118,7 +124,7 @@ def load_intrinsics(path: str) -> Intrinsics:
 
 
 def compute_intrinsics(jpegs, cfg: BoardConfig, model="pinhole") -> Intrinsics:
-    objpoints, imgpoints, image_size, _ = correspondences(jpegs, cfg)
+    objpoints, imgpoints, image_size, used = correspondences(jpegs, cfg)
     if len(objpoints) < 4:
         raise ValueError(f"보드 검출 프레임 부족: {len(objpoints)}장 (최소 4장)")
     if model == "fisheye":
@@ -141,4 +147,5 @@ def compute_intrinsics(jpegs, cfg: BoardConfig, model="pinhole") -> Intrinsics:
         per_view_errors=[round(e, 4) for e in errs],
         n_images=len(objpoints),
         board=cfg.to_dict(),
+        used_indices=list(used),
     )

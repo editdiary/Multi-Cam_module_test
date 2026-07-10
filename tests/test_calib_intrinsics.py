@@ -42,6 +42,10 @@ def test_compute_intrinsics_pinhole_checkerboard():
     assert intr.rms < 1.0                                  # 합성 데이터 → 낮은 RMS
     assert intr.n_images >= 8
     assert len(intr.per_view_errors) == intr.n_images
+    # used_indices: per_view_errors[i] ↔ 원본 프레임 정렬 위치 매핑(나쁜 이미지 추적용)
+    assert intr.used_indices is not None
+    assert len(intr.used_indices) == intr.n_images
+    assert all(0 <= u < 12 for u in intr.used_indices)
 
 
 def test_compute_intrinsics_too_few_images():

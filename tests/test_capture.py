@@ -1,4 +1,5 @@
 import os
+import time
 
 import pytest
 
@@ -26,7 +27,13 @@ def test_camera_latest_jpeg():
     cam = Camera(0, 1280, 720)
     cam.start()
     try:
-        jpeg = cam.latest_jpeg()
+        # 프리뷰는 new-sample 푸시 콜백으로 캐시되므로 첫 프레임이 도착할 때까지 잠깐 폴링.
+        jpeg = None
+        deadline = time.monotonic() + 3.0
+        while jpeg is None and time.monotonic() < deadline:
+            jpeg = cam.latest_jpeg()
+            if jpeg is None:
+                time.sleep(0.02)
     finally:
         cam.stop()
     assert jpeg is not None

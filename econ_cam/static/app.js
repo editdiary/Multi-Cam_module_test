@@ -406,6 +406,13 @@ async function refreshRectSingleStatus() {
   updateRectSingleRight();
 }
 
+function rectAlpha() {
+  return document.getElementById("rect-alpha").value;
+}
+function rectMultiAlpha() {
+  return document.getElementById("rect-multi-alpha").value;
+}
+
 function updateRectSingleRight() {
   const dev = document.getElementById("rect-single-cam").value;
   const session = document.getElementById("rect-session").value;
@@ -417,7 +424,7 @@ function updateRectSingleRight() {
   if (on && dev !== "" && session) {
     msg.hidden = true;
     img.hidden = false;
-    img.src = `/api/rectify/stream/${dev}?session=${encodeURIComponent(session)}&model=${model}&t=${Date.now()}`;
+    img.src = `/api/rectify/stream/${dev}?session=${encodeURIComponent(session)}&model=${model}&alpha=${rectAlpha()}&t=${Date.now()}`;
   } else {
     img.hidden = true;
     img.removeAttribute("src");
@@ -446,19 +453,24 @@ function renderRectQuality(info, ctx) {
   }
   const v = info.verdict || {};
   const errs = info.per_view_errors || [];
+  const used = info.used_indices || null;   // per_view_errors[i] → 저장 프레임 정렬 위치(원본 파일 추적)
   const size = info.image_size || [];
+  // used_indices가 있고(재계산됨) 폴더·카메라가 특정되면 막대 클릭으로 실제 이미지를 볼 수 있다.
+  const canView = !!(used && used.length === errs.length && ctx && ctx.session && ctx.dev !== "" && ctx.dev != null);
+  const frameNo = (i) => (canView ? used[i] : i);
   const maxScale = Math.max(2.0, ...errs, 0.001);
   const bars = errs
     .map((e, i) => {
       const cls = e < 1.0 ? "pv-good" : e < 2.0 ? "pv-fair" : "pv-poor";
       const ht = Math.max(4, Math.round((e / maxScale) * 100));
-      return `<div class="pv-bar ${cls}" style="height:${ht}%" title="이미지 ${i}: ${e}px"></div>`;
+      const clk = canView ? " pv-click" : "";
+      return `<div class="pv-bar ${cls}${clk}" data-i="${i}" style="height:${ht}%" title="프레임 ${frameNo(i)}: ${e}px"></div>`;
     })
     .join("");
   let worst = "";
   if (errs.length) {
     const m = Math.max(...errs);
-    worst = ` · 최악 #${errs.indexOf(m)} ${m.toFixed(2)}px`;
+    worst = ` · 최악 프레임 ${frameNo(errs.indexOf(m))} (${m.toFixed(2)}px)`;
   }
   let srcLabel = "";
   if (ctx && ctx.session) {
@@ -472,14 +484,36 @@ function renderRectQuality(info, ctx) {
     `<div class="q-note">추정한 K·왜곡으로 체커보드 코너를 다시 투영했을 때 실제 검출 위치와의 평균 오차입니다. <b>낮을수록 정확</b> (보통 &lt;1px 양호).</div>` +
     `<div class="q-meta">사용 이미지 ${info.n_images || errs.length}장 · ${info.model} · ${size[0]}×${size[1]}${worst}</div>` +
     `<div class="pv-bars">${bars}</div>` +
-    `<div class="q-note">↑ 막대 = 이미지별 재투영 오차. 유독 높은 막대(빨강)는 흔들림/검출 오류일 수 있어, 그 이미지를 빼고 다시 촬영·계산하면 개선될 수 있습니다.</div>` +
+    `<div class="q-note">↑ 막대 = 프레임별 재투영 오차. 유독 높은 막대(빨강)는 흔들림/검출 오류일 수 있어, 그 이미지를 빼고 다시 촬영·계산하면 개선될 수 있습니다.` +
+    (canView
+      ? ` <b>막대를 클릭</b>하면 해당 촬영 이미지를 아래에서 확인할 수 있습니다.`
+      : ` <i>('재계산'을 한 번 실행하면 막대 클릭으로 원본 이미지를 확인할 수 있습니다.)</i>`) +
+    `</div>` +
+    (canView
+      ? `<div class="q-view" id="rect-q-view" hidden><img id="rect-q-view-img" alt="선택 프레임"><div class="q-view-cap" id="rect-q-view-cap"></div></div>`
+      : ``) +
     `<details class="q-detail"><summary>K·왜곡계수 보기</summary><pre>${fmtK(info.K)}\n\ndist: ${JSON.stringify(info.dist)}</pre></details>` +
     `<details class="q-help"><summary>이 수치는 무엇인가요?</summary><ul>` +
     `<li><b>재투영 오차(RMS)</b>: 캘리브레이션 정확도. 낮을수록 좋음. 매우 좋음&lt;0.5 / 양호&lt;1 / 보통&lt;2 / 미흡≥2 px.</li>` +
-    `<li><b>이미지별 오차</b>: 각 촬영 장면의 오차. 특정 이미지만 크면 그 장면 품질이 낮은 것.</li>` +
+    `<li><b>프레임별 오차</b>: 각 촬영 장면의 오차. 특정 이미지만 크면 그 장면 품질이 낮은 것.</li>` +
     `<li><b>K(내부 행렬)</b>: fx·fy = 초점거리(px), cx·cy = 주점(광학 중심 좌표).</li>` +
     `<li><b>dist(왜곡계수)</b>: 렌즈 왜곡. pinhole=k1,k2,p1,p2,k3 / fisheye=k1~k4.</li>` +
     `</ul></details>`;
+  if (canView) {
+    el.querySelectorAll(".pv-bar.pv-click").forEach((bar) => {
+      bar.addEventListener("click", () => {
+        const i = Number(bar.dataset.i);
+        const fno = used[i];
+        document.getElementById("rect-q-view-img").src =
+          `/api/calib/frame/intrinsic/${encodeURIComponent(ctx.session)}/${ctx.dev}/${fno}?t=${Date.now()}`;
+        document.getElementById("rect-q-view-cap").textContent =
+          `프레임 ${fno} · 재투영 오차 ${errs[i]}px`;
+        document.getElementById("rect-q-view").hidden = false;
+        el.querySelectorAll(".pv-bar").forEach((b) => b.classList.remove("pv-sel"));
+        bar.classList.add("pv-sel");
+      });
+    });
+  }
 }
 
 
@@ -515,7 +549,9 @@ async function buildRectMultiGrid(devs) {
     ? (await api(`/api/rectify/session_status?session=${encodeURIComponent(session)}&model=${model}`)).cameras
     : {};
   const t = Date.now();
-  const q = session ? `?session=${encodeURIComponent(session)}&model=${model}&t=${t}` : `?t=${t}`;
+  const q = session
+    ? `?session=${encodeURIComponent(session)}&model=${model}&alpha=${rectMultiAlpha()}&t=${t}`
+    : `?t=${t}`;
   document.getElementById("rect-multi-grid").innerHTML = devs
     .map(
       (d) =>
@@ -604,7 +640,7 @@ function populateCalibSessions(sub) {
 }
 
 // --- Intrinsic ---
-function startCalibIntPreview() {
+async function startCalibIntPreview() {
   const dev = document.getElementById("calib-int-cam").value;
   if (!dev) return;
   document.getElementById("calib-int-still").hidden = true;
@@ -612,7 +648,8 @@ function startCalibIntPreview() {
   img.hidden = false;
   img.src = `/api/stream/${dev}/mjpeg?t=${Date.now()}`;
   document.getElementById("calib-int-verdict").hidden = true;
-  populateCalibSessions("int").then(() => setCalibActive("int", false));
+  await populateCalibSessions("int");
+  setCalibActive("int", false);
 }
 
 async function calibIntStart() {
@@ -738,13 +775,14 @@ function selectedCalibExtDevs() {
   return [...document.querySelectorAll("#calib-ext-cams input:checked")].map((c) => c.value);
 }
 
-async function startCalibExtPreview() {
+async function startCalibExtPreview(activate = false) {
   const devs = selectedCalibExtDevs();
   const grid = document.getElementById("calib-ext-grid");
   if (!devs.length) {
     grid.innerHTML = "";
     document.getElementById("calib-ext-status").textContent = "카메라를 선택하세요.";
-    populateCalibSessions("ext").then(() => setCalibActive("ext", false));
+    await populateCalibSessions("ext");
+    setCalibActive("ext", activate);
     return;
   }
   await jsonPost("/api/sync/start", { devices: devs, sync_mode: 1 });
@@ -758,7 +796,9 @@ async function startCalibExtPreview() {
   document.getElementById("calib-ext-verdict").hidden = true;
   if (calibExtTimer) clearInterval(calibExtTimer);
   calibExtTimer = setInterval(pollCalibExtSync, 700);
-  populateCalibSessions("ext").then(() => setCalibActive("ext", false));
+  // 세션 목록 populate를 await한 뒤 활성 상태를 확정한다(resume에서 버튼이 다시 꺼지는 race 방지).
+  await populateCalibSessions("ext");
+  setCalibActive("ext", activate);
 }
 
 async function pollCalibExtSync() {
@@ -840,9 +880,10 @@ async function calibExtResume() {
       c.checked = r.devices.includes(Number(c.value));
     });
     await stopSync();
-    await startCalibExtPreview(); // 재개된 카메라로 동기 프리뷰 시작 (비활성 상태로 둠)
+    await startCalibExtPreview(true); // 재개된 카메라로 동기 프리뷰 시작 + 활성 상태로 확정
+  } else {
+    setCalibActive("ext", true);
   }
-  setCalibActive("ext", true);
   document.getElementById("calib-ext-verdict").hidden = true;
   renderPairCoverage(r.pairs);
   toast(`이어하기: ${r.resumed} (shot ${r.counts.shots}개)`);
@@ -950,6 +991,16 @@ document.getElementById("rect-model").addEventListener("change", () => {
   if (activeMode() === "rectify" && rectSub === "single") refreshRectSingleStatus();
 });
 document.getElementById("rect-toggle").addEventListener("change", updateRectSingleRight);
+document.getElementById("rect-alpha").addEventListener("input", () => {
+  document.getElementById("rect-alpha-val").textContent = Number(rectAlpha()).toFixed(1);
+});
+document.getElementById("rect-alpha").addEventListener("change", updateRectSingleRight);
+document.getElementById("rect-multi-alpha").addEventListener("input", () => {
+  document.getElementById("rect-multi-alpha-val").textContent = Number(rectMultiAlpha()).toFixed(1);
+});
+document.getElementById("rect-multi-alpha").addEventListener("change", () => {
+  if (activeMode() === "rectify" && rectSub === "multi") stopSync().then(startRectMulti);
+});
 document.getElementById("rect-multi-start").addEventListener("click", startRectMulti);
 document.getElementById("rect-multi-cams").addEventListener("change", () => {
   if (activeMode() === "rectify" && rectSub === "multi") stopSync().then(startRectMulti);

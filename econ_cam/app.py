@@ -82,6 +82,15 @@ def create_app(width=1920, height=1080):
         "lock": threading.Lock(),
     }
 
+    def _preview_size():
+        """활성 캡처 해상도의 종횡비를 보존한 프리뷰 크기(w,h). 폭은 PREVIEW_WIDTH 고정.
+        16:9(기본 1920×1080)에서는 (640,360)로 기존과 동일. 16:10(1920×1200) 등에서는 세로를
+        맞춰(예 400) 프리뷰가 아나모픽하게 눌리지 않게 하고, undistort 맵도 같은 크기로 만든다."""
+        w = PREVIEW_WIDTH
+        h = round(PREVIEW_WIDTH * state["height"] / state["width"])
+        h -= h % 2   # 인코더 안정을 위해 짝수 보장
+        return w, h
+
     def stop_streams():
         for cam in state["streams"].values():
             cam.stop()
@@ -96,7 +105,7 @@ def create_app(width=1920, height=1080):
     def get_or_start_stream(dev):
         cam = state["streams"].get(dev)
         if cam is None:
-            cam = capture.Camera(dev, state["width"], state["height"])
+            cam = capture.Camera(dev, state["width"], state["height"], *_preview_size())
             cam.start()
             state["streams"][dev] = cam
         return cam
@@ -133,6 +142,7 @@ def create_app(width=1920, height=1080):
             while state["streams"].get(dev) is cam:
                 jpeg = cam.latest_jpeg()
                 if jpeg is None:
+                    time.sleep(0.02)   # 논블로킹 캐시 read — 첫 프레임 전 busy-spin 방지
                     continue
                 yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n")
                 time.sleep(1 / 15)   # ~15fps — 조준용으로 충분, CPU 부하 완화
@@ -153,7 +163,8 @@ def create_app(width=1920, height=1080):
         with state["lock"]:
             stop_streams()          # 단일 프리뷰가 device 점유 시 충돌 방지
             stop_sync()
-            sess = capture.SyncSession(devs, state["width"], state["height"], sync_mode)
+            sess = capture.SyncSession(devs, state["width"], state["height"], sync_mode,
+                                       *_preview_size())
             sess.start()
             state["sync_session"] = sess
         return jsonify({"ok": True, "devices": devs})
@@ -258,6 +269,7 @@ def create_app(width=1920, height=1080):
             state["height"] = int(data["height"])
             stop_streams()
             stop_sync()
+            state["rectify"]["maps"].clear()   # 프리뷰 크기(종횡비)가 바뀌면 캐시된 맵 무효
         return jsonify({"ok": True, "width": state["width"], "height": state["height"]})
 
     @app.route("/api/params")
@@ -573,6 +585,23 @@ def create_app(width=1920, height=1080):
                 out.append(fh.read())
         return out
 
+    @app.route("/api/calib/frame/<sub_mode>/<name>/<int:dev>/<int:idx>")
+    def api_calib_frame(sub_mode, name, dev, idx):
+        """저장된 캘리브레이션 프레임(video<dev>/ 정렬 idx번째)을 반환 — 품질 리포트에서 나쁜 이미지 확인용."""
+        if sub_mode not in ("intrinsic", "extrinsic"):
+            return ("잘못된 sub_mode", 400)
+        d = os.path.join(_session_dir(sub_mode, name), f"video{dev}")
+        # 경로 이탈 방지: 정규화 경로가 CALIB_DIR 아래인지 확인
+        if not os.path.realpath(d).startswith(os.path.realpath(CALIB_DIR) + os.sep):
+            return ("잘못된 경로", 400)
+        if not os.path.isdir(d):
+            return ("폴더 없음", 404)
+        files = sorted(f for f in os.listdir(d) if f.endswith(".jpg"))
+        if idx < 0 or idx >= len(files):
+            return ("인덱스 범위 초과", 404)
+        with open(os.path.join(d, files[idx]), "rb") as fh:
+            return Response(fh.read(), mimetype="image/jpeg")
+
     @app.route("/api/rectify/sessions")
     def api_rectify_sessions():
         """계산 가능한 폴더만 목록화(board_config.json + video<n>/ jpg ≥4장). 이름 무관."""
@@ -623,11 +652,14 @@ def create_app(width=1920, height=1080):
                     cached = False
                 cameras[str(dev)] = {
                     "rms": intr.rms, "per_view_errors": intr.per_view_errors,
+                    "used_indices": intr.used_indices,
                     "n_images": intr.n_images, "image_size": list(intr.image_size),
                     "K": intr.K, "dist": intr.dist, "cached": cached,
                     "verdict": calib_quality.intrinsic_verdict(intr.rms)}
                 with state["lock"]:
-                    state["rectify"]["maps"].pop((name, model, dev), None)  # 재계산 시 맵 무효화
+                    # 재계산 시 해당 (세션·모델·카메라)의 모든 alpha 변형 맵을 무효화
+                    for k in [k for k in state["rectify"]["maps"] if k[:3] == (name, model, dev)]:
+                        del state["rectify"]["maps"][k]
             except (ValueError, OSError) as e:
                 errors[str(dev)] = str(e)
         return jsonify({"ok": True, "session": name, "model": model,
@@ -649,15 +681,17 @@ def create_app(width=1920, height=1080):
                 intr = calib_intrinsics.load_intrinsics(path)
                 cams[str(dev)] = {
                     "has": True, "model": intr.model, "rms": intr.rms,
-                    "per_view_errors": intr.per_view_errors, "n_images": intr.n_images,
+                    "per_view_errors": intr.per_view_errors, "used_indices": intr.used_indices,
+                    "n_images": intr.n_images,
                     "image_size": list(intr.image_size), "K": intr.K, "dist": intr.dist,
                     "verdict": calib_quality.intrinsic_verdict(intr.rms)}
             else:
                 cams[str(dev)] = {"has": False}
         return jsonify({"session": name, "model": model, "cameras": cams})
 
-    def _get_maps(session_dir, dev, model, cache_key):
-        """세션 폴더의 video<n>_<model>.json으로 프리뷰 해상도용 (map1,map2)를 캐시. 없으면 None."""
+    def _get_maps(session_dir, dev, model, cache_key, alpha=0.0):
+        """세션 폴더의 video<n>_<model>.json으로 프리뷰 해상도용 (map1,map2)를 캐시. 없으면 None.
+        프리뷰 크기는 활성 해상도 종횡비에 맞춰(_preview_size) 아나모픽 눌림을 방지한다."""
         with state["lock"]:
             m = state["rectify"]["maps"].get(cache_key)
         if m is not None:
@@ -666,11 +700,17 @@ def create_app(width=1920, height=1080):
         if not os.path.exists(path):
             return None
         intr = calib_intrinsics.load_intrinsics(path)
-        maps = calib_intrinsics.build_undistort_maps(
-            intr, (PREVIEW_WIDTH, PREVIEW_HEIGHT))
+        maps = calib_intrinsics.build_undistort_maps(intr, _preview_size(), alpha=alpha)
         with state["lock"]:
             state["rectify"]["maps"][cache_key] = maps
         return maps
+
+    def _req_alpha():
+        """보정 화각 슬라이더 값 alpha(0=크롭 ↔ 1=전체 화각). 캐시 키 안정화를 위해 반올림."""
+        try:
+            return max(0.0, min(1.0, round(float(request.args.get("alpha", 0.0)), 2)))
+        except (TypeError, ValueError):
+            return 0.0
 
     @app.route("/api/rectify/stream/<int:dev>")
     def api_rectify_stream(dev):
@@ -681,7 +721,8 @@ def create_app(width=1920, height=1080):
         sub_mode = request.args.get("sub_mode", "intrinsic")
         if not name:
             return ("session 필요", 404)
-        maps = _get_maps(_session_dir(sub_mode, name), dev, model, (name, model, dev))
+        alpha = _req_alpha()
+        maps = _get_maps(_session_dir(sub_mode, name), dev, model, (name, model, dev, alpha), alpha)
         if maps is None:
             return ("intrinsic 없음", 404)
         with state["lock"]:
@@ -691,6 +732,7 @@ def create_app(width=1920, height=1080):
             while state["streams"].get(dev) is cam:
                 jpeg = cam.latest_jpeg()
                 if jpeg is None:
+                    time.sleep(0.02)   # 논블로킹 캐시 read — 첫 프레임 전 busy-spin 방지
                     continue
                 out = calib_intrinsics.rectify_jpeg(jpeg, maps)
                 yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + out + b"\r\n")
@@ -709,6 +751,7 @@ def create_app(width=1920, height=1080):
         model = request.args.get("model", "pinhole")
         sub_mode = request.args.get("sub_mode", "intrinsic")
         session_dir = _session_dir(sub_mode, name) if name else None
+        alpha = _req_alpha()   # request 컨텍스트 밖의 gen()에서 쓰려면 미리 캡처
 
         def gen():
             last = None
@@ -718,7 +761,7 @@ def create_app(width=1920, height=1080):
                     last = jpeg
                     out = jpeg
                     if state["rectify"]["multi_on"] and session_dir:
-                        maps = _get_maps(session_dir, dev, model, (name, model, dev))
+                        maps = _get_maps(session_dir, dev, model, (name, model, dev, alpha), alpha)
                         if maps is not None:
                             out = calib_intrinsics.rectify_jpeg(jpeg, maps)
                     yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + out + b"\r\n")

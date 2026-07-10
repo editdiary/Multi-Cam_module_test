@@ -66,6 +66,9 @@ button:disabled { opacity: 0.45; cursor: default; filter: none; }
   margin-bottom: 16px;
 }
 .toolbar-left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.rect-alpha-lbl { display: inline-flex; align-items: center; gap: 6px; color: #aaa; font-size: 13px; }
+.rect-alpha-lbl input[type="range"] { width: 90px; vertical-align: middle; }
+.rect-alpha-lbl #rect-alpha-val, .rect-alpha-lbl #rect-multi-alpha-val { font-variant-numeric: tabular-nums; color: #ccc; }
 .actions { display: flex; gap: 10px; }
 select {
   padding: 8px;
@@ -86,6 +89,8 @@ select {
 .grid img { width: 100%; border-radius: 8px; }
 .grid figcaption { text-align: center; padding: 4px; color: #aaa; }
 .grid.pair { grid-template-columns: 1fr 1fr; }
+.rsubtab { background: #333; color: #ccc; border: none; padding: 6px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+.rsubtab.active { background: #2d7; color: #062; }
 .rsubmode { display: none; }
 .rsubmode.active { display: block; }
 .rect-msg {
@@ -93,14 +98,23 @@ select {
   min-height: 200px; padding: 16px; border-radius: 8px;
   background: #222; color: #aaa; border: 1px dashed #444;
 }
-.quality-panel { margin: 10px 0; padding: 12px; background: #242424; border-radius: 8px; }
-.q-head { font-weight: 600; color: #ccc; margin-bottom: 6px; }
+.rect-msg[hidden] { display: none; }   /* [hidden] 속성이 flex 규칙에 가려지지 않도록 */
+.quality-panel { margin: 16px 0; padding: 14px 16px; background: #242424; border-radius: 8px;
+  border: 1px solid #3a3a3a; border-left: 4px solid #2d7; }
+.q-head { font-weight: 700; color: #eee; font-size: 1.05em; margin-bottom: 8px;
+  padding-bottom: 6px; border-bottom: 1px solid #3a3a3a; }
 .q-rms { font-size: 1.1em; font-weight: 700; }
 .q-meta { color: #aaa; font-size: 0.9em; margin: 4px 0 8px; }
 .q-exc { color: #2d7; } .q-good { color: #7c7; } .q-fair { color: #dc6; } .q-poor { color: #e66; }
 .pv-bars { display: flex; align-items: flex-end; gap: 3px; height: 60px; }
 .pv-bar { width: 10px; background: #2d7; border-radius: 2px 2px 0 0; min-height: 4px; }
 .pv-good { background: #2d7; } .pv-fair { background: #dc6; } .pv-poor { background: #e66; }
+.pv-click { cursor: pointer; }
+.pv-click:hover { outline: 2px solid #8cf; outline-offset: 1px; }
+.pv-sel { outline: 2px solid #fff; outline-offset: 1px; }
+.q-view { margin-top: 10px; }
+.q-view img { max-width: 100%; border-radius: 6px; border: 1px solid #444; }
+.q-view-cap { color: #ccc; font-size: 0.9em; margin-top: 4px; }
 .q-detail { margin-top: 8px; color: #aaa; }
 .q-detail pre { background: #1a1a1a; padding: 8px; border-radius: 6px; overflow-x: auto; }
 .q-src { color: #888; font-weight: 400; font-size: 0.85em; }
